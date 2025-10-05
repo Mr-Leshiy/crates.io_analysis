@@ -13,6 +13,6 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 RUN cargo install --locked --version 0.14.24 cargo-deny
 
 WORKDIR /app
-COPY pyproject.toml uv.lock deny.toml gather.py .
+COPY pyproject.toml uv.lock deny.toml gather.py cargo_deny.py .
 RUN uv sync
 ENTRYPOINT ["uv", "run", "gather.py"]
