@@ -3,9 +3,10 @@ import asyncio
 import aiohttp
 import aiofiles
 import tempfile
-import shutil
 import logging
 import argparse
+
+from cargo_deny import CargoDenyInfo, CargoDenyAdvisoryInfo
 
 CRATES_IO_URL = "https://crates.io/api"
 logger = logging.getLogger(__name__)
@@ -23,10 +24,10 @@ class CrateInfo:
             "upload_time",
             "downloads",
             "recent_downloads",
-            "advisories",
-            "bans",
-            "licenses",
-            "sources",
+            *[
+                f"ad-{l}"
+                for l in CargoDenyAdvisoryInfo.lints
+            ],
         ]
 
     def to_row(
@@ -35,10 +36,7 @@ class CrateInfo:
         upload_time: str,
         downloads: int,
         recent_downloads: int,
-        advisories: bool,
-        bans: bool,
-        licenses: bool,
-        sources: bool,
+        advisories: list[int],
     ) -> list:
         return [
             name,
@@ -46,10 +44,7 @@ class CrateInfo:
             upload_time,
             downloads,
             recent_downloads,
-            advisories,
-            bans,
-            licenses,
-            sources,
+            *advisories,
         ]
 
 
@@ -85,10 +80,15 @@ async def main(args):
             )
 
 
+async def crates_info(s: aiohttp.ClientSession, args: str):
+    async with s.get(endpoint_url(f"v1/crates{args}")) as resp:
+        return await resp.json()
+
+
 async def analyze_crates(s: aiohttp.ClientSession, crates: list):
     crates_iter = filter(lambda c: not c["yanked"], crates)
     crates_iter = map(
-        lambda c: analyse_crate(s, c["name"], c["newest_version"], c["updated_at"]),
+        lambda c: analyse_crate(s, c["name"], c["newest_version"]),
         crates_iter,
     )
     # filter out all `None` elements returned by 'analyse_crate'
@@ -101,32 +101,13 @@ async def analyze_crates(s: aiohttp.ClientSession, crates: list):
             downloads=v[1]["downloads"],
             recent_downloads=v[1]["recent_downloads"],
             advisories=v[0].advisories,
-            bans=v[0].bans,
-            licenses=v[0].licenses,
-            sources=v[0].sources,
         ),
         zip(crates_iter, crates),
     )
     return list(crates_iter)
 
 
-class CargoDenyInfo:
-    def __init__(
-        self,
-        advisories: bool,
-        bans: bool,
-        licenses: bool,
-        sources: bool,
-    ):
-        self.advisories = advisories
-        self.bans = bans
-        self.licenses = licenses
-        self.sources = sources
-
-
-async def analyse_crate(
-    s: aiohttp.ClientSession, name: str, version: str, upload_time: str
-) -> CargoDenyInfo:
+async def analyse_crate(s: aiohttp.ClientSession, name: str, version: str) -> CargoDenyInfo:
     "Return 'None' if cannot analyse the crate for some reason"
 
     crate_name = f"{name}_{version}"
@@ -158,36 +139,10 @@ async def analyse_crate(
             stderr=asyncio.subprocess.DEVNULL,
         )
         await proc.wait()
-        # copy `deny.toml` file to that crate dir
-        shutil.copyfile("./deny.toml", f"{tmpdirname}/deny.toml", follow_symlinks=True)
 
-        # run 'cargo deny check'
-        proc = await asyncio.subprocess.create_subprocess_exec(
-            "cargo",
-            "deny",
-            "check",
-            cwd=f"{tmpdirname}",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+        return CargoDenyInfo(
+            advisories=await CargoDenyAdvisoryInfo.analyze(tmpdirname, "../deny.toml")
         )
-        await proc.wait()
-        out, _ = await proc.communicate()
-
-        if out == b"":
-            return None
-
-        out = out.decode("utf-8").strip().split(", ")
-        advisories = out[0].split()[1] == "ok"
-        bans = out[1].split()[1] == "ok"
-        licenses = out[2].split()[1] == "ok"
-        sources = out[3].split()[1] == "ok"
-        return CargoDenyInfo(advisories, bans, licenses, sources)
-
-
-async def crates_info(s: aiohttp.ClientSession, args: str):
-    async with s.get(endpoint_url(f"v1/crates{args}")) as resp:
-        return await resp.json()
-
 
 if __name__ == "__main__":
     logging.basicConfig(

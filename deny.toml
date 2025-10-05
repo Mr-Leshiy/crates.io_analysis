@@ -1,5 +1,3 @@
-
-
 [graph]
 targets = []
 
@@ -8,29 +6,3 @@ feature-depth = 1
 
 [advisories]
 ignore = []
-
-[licenses]
-allow = []
-confidence-threshold = 0.8
-exceptions = []
-
-[licenses.private]
-ignore = false
-registries = []
-
-[bans]
-multiple-versions = "warn"
-wildcards = "allow"
-highlight = "all"
-workspace-default-features = "allow"
-external-default-features = "allow"
-allow = []
-deny = []
-skip = []
-skip-tree = []
-
-[sources]
-unknown-registry = "allow"
-unknown-git = "allow"
-allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
