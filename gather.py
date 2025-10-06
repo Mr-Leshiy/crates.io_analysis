@@ -56,8 +56,6 @@ async def main(args):
             writer = csv.writer(f)
             writer.writerow(CrateInfo.colum_names())
 
-            info = await crates_info(s, "?sort=new&include_yanked=no")
-
             processed_amount = 0
             next_page = args.next_page
 
