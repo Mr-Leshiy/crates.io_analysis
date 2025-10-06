@@ -79,11 +79,13 @@ async def main(args):
 
 
 async def crates_info(s: aiohttp.ClientSession, args: str):
+    logger.info(f"Trying to get crates info, args: {args}")
     async with s.get(endpoint_url(f"v1/crates{args}")) as resp:
         return await resp.json()
 
 
 async def analyze_crates(s: aiohttp.ClientSession, crates: list):
+    logger.info(f"Trying to analyze crates")
     crates_iter = filter(lambda c: not c["yanked"], crates)
     crates_iter = map(
         lambda c: analyse_crate(s, c["name"], c["newest_version"]),
