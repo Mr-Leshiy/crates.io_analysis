@@ -1,5 +1,5 @@
-
 import asyncio
+
 
 class CargoDenyInfo:
     def __init__(self, advisories: list[int]):

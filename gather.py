@@ -24,10 +24,7 @@ class CrateInfo:
             "upload_time",
             "downloads",
             "recent_downloads",
-            *[
-                f"ad-{l}"
-                for l in CargoDenyAdvisoryInfo.lints
-            ],
+            *[f"ad-{l}" for l in CargoDenyAdvisoryInfo.lints],
         ]
 
     def to_row(
@@ -80,13 +77,15 @@ async def main(args):
 
 async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int = 5):
     logger.info(f"Trying to get crates info, args: {args}")
-    
+
     for attempt in range(1, num_of_retries + 1):
         async with s.get(endpoint_url(f"v1/crates{args}")) as resp:
             if resp.status == 200:
                 return await resp.json()
             else:
-                logger.error(f"Request failed with status {resp.status} on attempt {attempt}. Retrying...")
+                logger.error(
+                    f"Request failed with status {resp.status} on attempt {attempt}. Response: {await resp.text()}. Retrying..."
+                )
                 await asyncio.sleep(1)  # Optional backoff between retries
     return None
 
@@ -114,7 +113,9 @@ async def analyze_crates(s: aiohttp.ClientSession, crates: list):
     return list(crates_iter)
 
 
-async def analyse_crate(s: aiohttp.ClientSession, name: str, version: str) -> CargoDenyInfo:
+async def analyse_crate(
+    s: aiohttp.ClientSession, name: str, version: str
+) -> CargoDenyInfo:
     "Return 'None' if cannot analyse the crate for some reason"
 
     crate_name = f"{name}_{version}"
@@ -150,6 +151,7 @@ async def analyse_crate(s: aiohttp.ClientSession, name: str, version: str) -> Ca
         return CargoDenyInfo(
             advisories=await CargoDenyAdvisoryInfo.analyze(tmpdirname, "../deny.toml")
         )
+
 
 if __name__ == "__main__":
     logging.basicConfig(
