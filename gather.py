@@ -88,7 +88,7 @@ async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int =
             else:
                 logger.error(f"Request failed with status {resp.status} on attempt {attempt}. Retrying...")
                 await asyncio.sleep(1)  # Optional backoff between retries
-        return None
+    return None
 
 
 async def analyze_crates(s: aiohttp.ClientSession, crates: list):
