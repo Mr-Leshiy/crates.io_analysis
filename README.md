@@ -5,9 +5,9 @@ The analysis is driven by the [`cargo-deny`](https://github.com/EmbarkStudios/ca
 
 ## Build and run gathering tool
 ```shell
-docker build -t crates.io_analysis:latest .
-docker run --name crates.io_analysis crates.io_analysis:latest
-docker cp crates.io_analysis:app/crates_info.csv .
+docker build -t crates_gather:latest .
+docker run --detach --name crates_gather crates_gather:latest
+docker cp crates_gather:app/crates_info.csv .
 ```
 
 ## Collected data

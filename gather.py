@@ -78,10 +78,17 @@ async def main(args):
             )
 
 
-async def crates_info(s: aiohttp.ClientSession, args: str):
+async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int = 5):
     logger.info(f"Trying to get crates info, args: {args}")
-    async with s.get(endpoint_url(f"v1/crates{args}")) as resp:
-        return await resp.json()
+    
+    for attempt in range(1, num_of_retries + 1):
+        async with s.get(endpoint_url(f"v1/crates{args}")) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            else:
+                logger.error(f"Request failed with status {resp.status} on attempt {attempt}. Retrying...")
+                await asyncio.sleep(1)  # Optional backoff between retries
+        return None
 
 
 async def analyze_crates(s: aiohttp.ClientSession, crates: list):
