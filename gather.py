@@ -56,9 +56,12 @@ async def main(args):
             processed_amount = 0
             next_page = args.next_page
 
+            crates_per_page = 100
             while next_page != None:
                 if next_page == "":
-                    next_page = "?sort=new&include_yanked=no"
+                    next_page = (
+                        f"?sort=new&include_yanked=no&per_page={crates_per_page}"
+                    )
 
                 info = await crates_info(s, f"{next_page}")
                 crates = await analyze_crates(s, info["crates"])
