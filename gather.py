@@ -159,10 +159,12 @@ async def analyse_crate(
             stderr=asyncio.subprocess.DEVNULL,
         )
         await proc.wait()
-        logger.info(f"Analyzing crate {name}/{version}")
-        return CargoDenyInfo(
+        logger.info(f"Analyzing crate {name}/{version}...")
+        res = CargoDenyInfo(
             advisories=await CargoDenyAdvisoryInfo.analyze(tmpdirname, "../deny.toml")
         )
+        logger.info(f"Crate {name}/{version} analyzed")
+        return res
 
 
 if __name__ == "__main__":
