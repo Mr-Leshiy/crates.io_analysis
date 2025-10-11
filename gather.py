@@ -99,7 +99,6 @@ async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int =
 
 
 async def analyze_crates(s: aiohttp.ClientSession, crates: list):
-    logger.info(f"Trying to analyze crates")
     crates_iter = filter(lambda c: not c["yanked"], crates)
     crates_iter = map(
         lambda c: analyse_crate(s, c["name"], c["newest_version"]),
@@ -129,6 +128,7 @@ async def analyse_crate(
     crate_name = f"{name}_{version}"
     fname = f"{crate_name}.tar.gz"
     with tempfile.TemporaryDirectory(dir="./") as tmpdirname:
+        logger.info(f"Downloading crate {name}/{version}")
         async with (
             s.get(
                 endpoint_url(f"v1/crates/{name}/{version}/download"),
@@ -147,6 +147,7 @@ async def analyse_crate(
                 await f.write(data)
 
         # unpack archive
+
         proc = await asyncio.subprocess.create_subprocess_exec(
             "tar",
             "-xf",
@@ -158,7 +159,7 @@ async def analyse_crate(
             stderr=asyncio.subprocess.DEVNULL,
         )
         await proc.wait()
-
+        logger.info(f"Analyzing crate {name}/{version}")
         return CargoDenyInfo(
             advisories=await CargoDenyAdvisoryInfo.analyze(tmpdirname, "../deny.toml")
         )
