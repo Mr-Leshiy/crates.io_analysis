@@ -9,6 +9,9 @@ import argparse
 from cargo_deny import CargoDenyInfo, CargoDenyAdvisoryInfo
 
 CRATES_IO_URL = "https://crates.io/api"
+USER_AGENT_HEADER = (
+    "crates.io_analysis (https://github.com/Mr-Leshiy/crates.io_analysis)"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -82,7 +85,9 @@ async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int =
     logger.info(f"Trying to get crates info, args: {args}")
 
     for attempt in range(1, num_of_retries + 1):
-        async with s.get(endpoint_url(f"v1/crates{args}")) as resp:
+        async with s.get(
+            endpoint_url(f"v1/crates{args}"), headers={"User-Agent": USER_AGENT_HEADER}
+        ) as resp:
             if resp.status == 200:
                 return await resp.json()
             else:
@@ -125,7 +130,10 @@ async def analyse_crate(
     fname = f"{crate_name}.tar.gz"
     with tempfile.TemporaryDirectory(dir="./") as tmpdirname:
         async with (
-            s.get(endpoint_url(f"v1/crates/{name}/{version}/download")) as resp,
+            s.get(
+                endpoint_url(f"v1/crates/{name}/{version}/download"),
+                headers={"User-Agent": USER_AGENT_HEADER},
+            ) as resp,
             aiofiles.open(f"{tmpdirname}/{fname}", "wb") as f,
         ):
             if resp.content_type != "application/gzip":
