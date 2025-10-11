@@ -5,6 +5,7 @@ import aiofiles
 import tempfile
 import logging
 import argparse
+import requests
 
 from cargo_deny import CargoDenyInfo, CargoDenyAdvisoryInfo
 
@@ -51,9 +52,7 @@ class CrateInfo:
 async def main(args):
     fname = "crates_info.csv"
     logger.info(f"Loading crates info into the {fname}")
-    with open(fname, "w") as f:
-        s = aiohttp.ClientSession()
-       
+    with open(fname, "w") as f:       
         writer = csv.writer(f)
         writer.writerow(CrateInfo.colum_names())
 
@@ -67,8 +66,8 @@ async def main(args):
                     f"?sort=new&include_yanked=no&per_page={crates_per_page}"
                 )
 
-            info = await crates_info(s, f"{next_page}")
-            crates = await analyze_crates(s, info["crates"])
+            info = await crates_info(f"{next_page}")
+            crates = await analyze_crates(info["crates"])
             processed_amount += len(crates)
             writer.writerows(crates)
             next_page = info["meta"]["next_page"]
@@ -76,57 +75,51 @@ async def main(args):
             logger.info(
                 f"processed {processed_amount}/{info['meta']['total']}, next_page: {next_page}"
             )
-
-        await s.close()
         logger.info(
             f"All crates info loaded, total amount: {info['meta']['total']}, processed amount: {processed_amount}"
         )
 
 
-async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int = 5):
+async def crates_info(args: str, num_of_retries: int = 5):
     logger.info(f"Trying to get crates info, args: {args}")
 
     for attempt in range(1, num_of_retries + 1):
-        async with s.get(
-            endpoint_url(f"v1/crates{args}"), headers={"User-Agent": USER_AGENT_HEADER}
-        ) as resp:
-            if resp.status == 200:
-                return await resp.json()
-            else:
-                logger.error(
-                    f"Request failed with status {resp.status} on attempt {attempt}. Response: {await resp.text()}. Retrying..."
-                )
-                await s.close()
-                # restart the session
-                s = aiohttp.ClientSession()
-                await asyncio.sleep(5)  # Optional backoff between retries
+        resp = requests.get(endpoint_url(f"v1/crates{args}"), headers={"User-Agent": USER_AGENT_HEADER})
+        if resp.status == 200:
+            return resp.json()
+        else:
+            logger.error(
+                f"Request failed with status {resp.status} on attempt {attempt}. Response: {resp.text}. Retrying..."
+            )
+            await asyncio.sleep(5)  # Optional backoff between retries
     return None
 
 
-async def analyze_crates(s: aiohttp.ClientSession, crates: list):
-    crates_iter = filter(lambda c: not c["yanked"], crates)
-    crates_iter = map(
-        lambda c: analyse_crate(s, c["name"], c["newest_version"]),
-        crates_iter,
-    )
-    # filter out all `None` elements returned by 'analyse_crate'
-    crates_iter = filter(lambda v: v != None, await asyncio.gather(*crates_iter))
-    crates_iter = map(
-        lambda v: CrateInfo.to_row(
-            name=v[1]["name"],
-            version=v[1]["newest_version"],
-            upload_time=v[1]["updated_at"],
-            downloads=v[1]["downloads"],
-            recent_downloads=v[1]["recent_downloads"],
-            advisories=v[0].advisories,
-        ),
-        zip(crates_iter, crates),
-    )
-    return list(crates_iter)
+async def analyze_crates(crates: list):
+    async with aiohttp.ClientSession() as session:
+        crates_iter = filter(lambda c: not c["yanked"], crates)
+        crates_iter = map(
+            lambda c: analyse_crate(session, c["name"], c["newest_version"]),
+            crates_iter,
+        )
+        # filter out all `None` elements returned by 'analyse_crate'
+        crates_iter = filter(lambda v: v != None, await asyncio.gather(*crates_iter))
+        crates_iter = map(
+            lambda v: CrateInfo.to_row(
+                name=v[1]["name"],
+                version=v[1]["newest_version"],
+                upload_time=v[1]["updated_at"],
+                downloads=v[1]["downloads"],
+                recent_downloads=v[1]["recent_downloads"],
+                advisories=v[0].advisories,
+            ),
+            zip(crates_iter, crates),
+        )
+        return list(crates_iter)
 
 
 async def analyse_crate(
-    s: aiohttp.ClientSession, name: str, version: str
+    session: aiohttp.ClientSession, name: str, version: str
 ) -> CargoDenyInfo:
     "Return 'None' if cannot analyse the crate for some reason"
 
@@ -135,7 +128,7 @@ async def analyse_crate(
     with tempfile.TemporaryDirectory(dir="./") as tmpdirname:
         logger.info(f"Downloading crate {name}/{version}")
         async with (
-            s.get(
+            session.get(
                 endpoint_url(f"v1/crates/{name}/{version}/download"),
                 headers={"User-Agent": USER_AGENT_HEADER},
             ) as resp,
