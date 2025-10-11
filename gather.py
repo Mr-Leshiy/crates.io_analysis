@@ -85,7 +85,7 @@ async def crates_info(args: str, num_of_retries: int = 5):
 
     for attempt in range(1, num_of_retries + 1):
         resp = requests.get(endpoint_url(f"v1/crates{args}"), headers={"User-Agent": USER_AGENT_HEADER})
-        if resp.status == 200:
+        if resp.status_code == 200:
             return resp.json()
         else:
             logger.error(
