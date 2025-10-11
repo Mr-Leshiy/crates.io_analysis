@@ -89,7 +89,7 @@ async def crates_info(args: str, num_of_retries: int = 5):
             return resp.json()
         else:
             logger.error(
-                f"Request failed with status {resp.status} on attempt {attempt}. Response: {resp.text}. Retrying..."
+                f"Request failed with status {resp.status_code} on attempt {attempt}. Response: {resp.text}. Retrying..."
             )
             await asyncio.sleep(5)  # Optional backoff between retries
     return None
