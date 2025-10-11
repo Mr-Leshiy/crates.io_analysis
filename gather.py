@@ -52,33 +52,35 @@ async def main(args):
     fname = "crates_info.csv"
     logger.info(f"Loading crates info into the {fname}")
     with open(fname, "w") as f:
-        async with aiohttp.ClientSession() as s:
-            writer = csv.writer(f)
-            writer.writerow(CrateInfo.colum_names())
+        s = aiohttp.ClientSession()
+       
+        writer = csv.writer(f)
+        writer.writerow(CrateInfo.colum_names())
 
-            processed_amount = 0
-            next_page = args.next_page
+        processed_amount = 0
+        next_page = args.next_page
 
-            crates_per_page = 100
-            while next_page != None:
-                if next_page == "":
-                    next_page = (
-                        f"?sort=new&include_yanked=no&per_page={crates_per_page}"
-                    )
-
-                info = await crates_info(s, f"{next_page}")
-                crates = await analyze_crates(s, info["crates"])
-                processed_amount += len(crates)
-                writer.writerows(crates)
-                next_page = info["meta"]["next_page"]
-
-                logger.info(
-                    f"processed {processed_amount}/{info['meta']['total']}, next_page: {next_page}"
+        crates_per_page = 100
+        while next_page != None:
+            if next_page == "":
+                next_page = (
+                    f"?sort=new&include_yanked=no&per_page={crates_per_page}"
                 )
 
+            info = await crates_info(s, f"{next_page}")
+            crates = await analyze_crates(s, info["crates"])
+            processed_amount += len(crates)
+            writer.writerows(crates)
+            next_page = info["meta"]["next_page"]
+
             logger.info(
-                f"All crates info loaded, total amount: {info['meta']['total']}, processed amount: {processed_amount}"
+                f"processed {processed_amount}/{info['meta']['total']}, next_page: {next_page}"
             )
+
+        await s.close()
+        logger.info(
+            f"All crates info loaded, total amount: {info['meta']['total']}, processed amount: {processed_amount}"
+        )
 
 
 async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int = 5):
@@ -94,7 +96,10 @@ async def crates_info(s: aiohttp.ClientSession, args: str, num_of_retries: int =
                 logger.error(
                     f"Request failed with status {resp.status} on attempt {attempt}. Response: {await resp.text()}. Retrying..."
                 )
-                await asyncio.sleep(1)  # Optional backoff between retries
+                await s.close()
+                # restart the session
+                s = aiohttp.ClientSession()
+                await asyncio.sleep(5)  # Optional backoff between retries
     return None
 
 
