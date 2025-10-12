@@ -159,7 +159,9 @@ async def analyse_crate(
         await proc.wait()
         logger.info(f"Analyzing crate {name}/{version}...")
         res = CargoDenyInfo(
-            advisories=await CargoDenyAdvisoryInfo.analyze(tmpdirname, "../deny.toml")
+            advisories=await CargoDenyAdvisoryInfo.analyze(
+                f"{name}/{version}", tmpdirname, "../deny.toml"
+            )
         )
         logger.info(f"Crate {name}/{version} analyzed")
         return res

@@ -1,4 +1,7 @@
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class CargoDenyInfo:
@@ -25,7 +28,7 @@ class CargoDenyAdvisoryInfo:
         "yanked-not-detected",
     }
 
-    async def analyze(dir_name, config_path) -> list[int]:
+    async def analyze(crate_name, dir_name, config_path) -> list[int]:
         """
         Analyze a Rust project for advisory issues using multiple lint levels.
 
@@ -45,12 +48,15 @@ class CargoDenyAdvisoryInfo:
         """
         return await asyncio.gather(
             *[
-                CargoDenyAdvisoryInfo.advisories_check(dir_name, config_path, entry)
+                CargoDenyAdvisoryInfo.advisories_check(
+                    crate_name, dir_name, config_path, entry
+                )
                 for entry in CargoDenyAdvisoryInfo.lints
             ]
         )
 
-    async def advisories_check(dir_name, config_path, lint) -> int:
+    async def advisories_check(crate_name, dir_name, config_path, lint) -> int:
+        logger.info(f"Starting cargo deny {lint} for {crate_name}")
         proc = await asyncio.subprocess.create_subprocess_exec(
             "cargo",
             "deny",
@@ -64,8 +70,8 @@ class CargoDenyAdvisoryInfo:
             cwd=f"{dir_name}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.DEVNULL,
         )
-        await proc.wait()
         out, _ = await proc.communicate()
         if out == b"":
             return None
