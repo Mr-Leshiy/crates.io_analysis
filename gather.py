@@ -13,6 +13,7 @@ CRATES_IO_URL = "https://crates.io/api"
 USER_AGENT_HEADER = (
     "crates.io_analysis (https://github.com/Mr-Leshiy/crates.io_analysis)"
 )
+CRATES_PER_PAGE = 50
 logger = logging.getLogger(__name__)
 
 
@@ -52,19 +53,16 @@ class CrateInfo:
 async def main(args):
     fname = "crates_info.csv"
     logger.info(f"Loading crates info into the {fname}")
-    with open(fname, "w") as f:       
+    with open(fname, "w") as f:
         writer = csv.writer(f)
         writer.writerow(CrateInfo.colum_names())
 
         processed_amount = 0
         next_page = args.next_page
 
-        crates_per_page = 100
         while next_page != None:
             if next_page == "":
-                next_page = (
-                    f"?sort=new&include_yanked=no&per_page={crates_per_page}"
-                )
+                next_page = f"?sort=new&include_yanked=no&per_page={CRATES_PER_PAGE}"
 
             info = await crates_info(f"{next_page}")
             crates = await analyze_crates(info["crates"])
@@ -84,7 +82,9 @@ async def crates_info(args: str, num_of_retries: int = 5):
     logger.info(f"Trying to get crates info, args: {args}")
 
     for attempt in range(1, num_of_retries + 1):
-        resp = requests.get(endpoint_url(f"v1/crates{args}"), headers={"User-Agent": USER_AGENT_HEADER})
+        resp = requests.get(
+            endpoint_url(f"v1/crates{args}"), headers={"User-Agent": USER_AGENT_HEADER}
+        )
         if resp.status_code == 200:
             return resp.json()
         else:
