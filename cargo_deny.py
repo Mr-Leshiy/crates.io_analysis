@@ -61,7 +61,7 @@ class CargoDenyAdvisoryInfo:
         config_path,
         lint,
         num_of_retries: int = 5,
-        timeout: int = 10,
+        timeout: int = 120,
     ) -> int:
         for attempt in range(1, num_of_retries + 1):
             proc = await asyncio.subprocess.create_subprocess_exec(
