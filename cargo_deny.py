@@ -80,7 +80,7 @@ class CargoDenyAdvisoryInfo:
                 stdin=asyncio.subprocess.DEVNULL,
             )
             try:
-                out, _ = asyncio.wait_for(proc.communicate(), timeout)
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout)
                 if out == b"":
                     return None
                 res = CargoDenyAdvisoryInfo.errors_amount(out)
