@@ -64,7 +64,7 @@ class CargoDenyAdvisoryInfo:
         timeout: int = 120,
     ) -> int:
         for attempt in range(1, num_of_retries + 1):
-            proc = await asyncio.subprocess.create_subprocess_exec(
+            command = [
                 "cargo",
                 "deny",
                 "check",
@@ -74,6 +74,9 @@ class CargoDenyAdvisoryInfo:
                 f"--config={config_path}",
                 f"--deny={lint}",
                 *[f"--allow={l}" for l in CargoDenyAdvisoryInfo.lints if l != lint],
+            ]
+            proc = await asyncio.subprocess.create_subprocess_exec(
+                *command,
                 cwd=f"{dir_name}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -82,13 +85,15 @@ class CargoDenyAdvisoryInfo:
             try:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout)
                 if out == b"":
-                    logger.error(f"Cargo deny {lint} for {crate_name} failed, '{err}'.")
+                    logger.error(
+                        f"'{command}' for {crate_name} failed, error: '{err}'."
+                    )
                     return None
                 res = CargoDenyAdvisoryInfo.errors_amount(out)
                 return res
             except asyncio.TimeoutError:
                 logger.error(
-                    f"Cargo deny {lint} for {crate_name} timed out after {timeout} seconds on attempt {attempt}. Terminating..."
+                    f"{command}' for {crate_name} timed out after {timeout} seconds on attempt {attempt}. Terminating..."
                 )
                 proc.terminate()
                 attempt += 1
