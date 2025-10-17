@@ -64,17 +64,19 @@ class CargoDenyAdvisoryInfo:
         timeout: int = 120,
     ) -> int:
         for attempt in range(1, num_of_retries + 1):
-            command = " ".join([
-                "cargo",
-                "deny",
-                "check",
-                "advisories",
-                "--exclude-dev",
-                "--show-stats",
-                f"--config={config_path}",
-                f"--deny={lint}",
-                *[f"--allow={l}" for l in CargoDenyAdvisoryInfo.lints if l != lint],
-            ])
+            command = " ".join(
+                [
+                    "cargo",
+                    "deny",
+                    "check",
+                    "advisories",
+                    "--exclude-dev",
+                    "--show-stats",
+                    f"--config={config_path}",
+                    f"--deny={lint}",
+                    *[f"--allow={l}" for l in CargoDenyAdvisoryInfo.lints if l != lint],
+                ]
+            )
             proc = await asyncio.subprocess.create_subprocess_shell(
                 command,
                 cwd=f"{dir_name}",
@@ -83,20 +85,25 @@ class CargoDenyAdvisoryInfo:
                 stdin=asyncio.subprocess.DEVNULL,
             )
             try:
-                out, err = await asyncio.wait_for(proc.communicate(), timeout)
-                if out == b"":
+                status_code = asyncio.wait_for(await proc.wait(), timeout)
+                if status_code != 0:
                     logger.error(
-                        f"'{command}' for {crate_name} failed."
+                        f"Cargo deny advisory {lint} for {crate_name} returns with {status_code} on attempt {attempt}. Terminating and retry..."
                     )
-                    return None
+                    proc.terminate()
+                    attempt += 1
+                    continue
+
+                out, _ = await proc.communicate()
                 res = CargoDenyAdvisoryInfo.errors_amount(out)
                 return res
             except asyncio.TimeoutError:
                 logger.error(
-                    f"{command}' for {crate_name} timed out after {timeout} seconds on attempt {attempt}. Terminating..."
+                    f"Cargo deny advisory {lint} for {crate_name} timed out after {timeout} seconds on attempt {attempt}. Terminating and retry..."
                 )
                 proc.terminate()
                 attempt += 1
+                continue
         return None
 
     def is_ok(out: bytes) -> bool:
