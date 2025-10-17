@@ -80,9 +80,9 @@ class CargoDenyAdvisoryInfo:
                 stdin=asyncio.subprocess.DEVNULL,
             )
             try:
-                out, _ = await asyncio.wait_for(proc.communicate(), timeout)
+                out, err = await asyncio.wait_for(proc.communicate(), timeout)
                 if out == b"":
-                    logger.error(f"Cargo deny {lint} for {crate_name} failed.")
+                    logger.error(f"Cargo deny {lint} for {crate_name} failed, '{err}'.")
                     return None
                 res = CargoDenyAdvisoryInfo.errors_amount(out)
                 return res
