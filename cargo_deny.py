@@ -86,14 +86,14 @@ class CargoDenyAdvisoryInfo:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout)
                 if out == b"":
                     logger.error(
-                        f"'{command}' for {crate_name} failed, error: '{err}'."
+                        f"'{" ".join(command)}' for {crate_name} failed, error: '{err}'."
                     )
                     return None
                 res = CargoDenyAdvisoryInfo.errors_amount(out)
                 return res
             except asyncio.TimeoutError:
                 logger.error(
-                    f"{command}' for {crate_name} timed out after {timeout} seconds on attempt {attempt}. Terminating..."
+                    f"{" ".join(command)}' for {crate_name} timed out after {timeout} seconds on attempt {attempt}. Terminating..."
                 )
                 proc.terminate()
                 attempt += 1
