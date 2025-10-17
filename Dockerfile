@@ -9,6 +9,7 @@ RUN apt-get update && \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # Ensure Cargo's bin directory is in the PATH for subsequent commands
 ENV PATH="/root/.cargo/bin:${PATH}"
+RUN rustup toolchain install nightly
 # install cargo-deny
 RUN cargo install --locked --version 0.18.5 cargo-deny
 
