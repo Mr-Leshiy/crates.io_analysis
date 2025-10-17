@@ -46,6 +46,17 @@ class CargoDenyAdvisoryInfo:
             issues found under each lint level. The order matches
             `CargoDenyAdvisoryInfo.lints`.
         """
+
+        # triggers installing necessary tollchain for the crate
+        proc = await asyncio.subprocess.create_subprocess_shell(
+                "cargo info",
+                cwd=f"{dir_name}",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+
         return await asyncio.gather(
             *[
                 CargoDenyAdvisoryInfo.advisories_check(
@@ -81,7 +92,7 @@ class CargoDenyAdvisoryInfo:
                 command,
                 cwd=f"{dir_name}",
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
                 stdin=asyncio.subprocess.DEVNULL,
             )
             try:
