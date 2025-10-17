@@ -85,16 +85,7 @@ class CargoDenyAdvisoryInfo:
                 stdin=asyncio.subprocess.DEVNULL,
             )
             try:
-                status_code = await asyncio.wait_for(proc.wait(), timeout)
-                if status_code != 0:
-                    logger.error(
-                        f"Cargo deny advisory {lint} for {crate_name} returns with {status_code} on attempt {attempt}. Terminating and retry..."
-                    )
-                    attempt += 1
-                    await asyncio.sleep(5)  # Optional backoff between retries
-                    continue
-
-                out, _ = await proc.communicate()
+                out, _ = await asyncio.wait_for(proc.communicate(), timeout)
                 res = CargoDenyAdvisoryInfo.errors_amount(out)
                 return res
             except asyncio.TimeoutError:
