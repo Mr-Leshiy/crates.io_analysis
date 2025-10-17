@@ -10,7 +10,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 # Ensure Cargo's bin directory is in the PATH for subsequent commands
 ENV PATH="/root/.cargo/bin:${PATH}"
 # install cargo-deny
-RUN cargo install --locked --version 0.14.24 cargo-deny
+RUN cargo install --locked --version 0.18.5 cargo-deny
 
 WORKDIR /app
 COPY pyproject.toml uv.lock deny.toml gather.py cargo_deny.py .
