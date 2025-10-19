@@ -135,6 +135,9 @@ async def analyse_crate(
             aiofiles.open(f"{tmpdirname}/{fname}", "wb") as f,
         ):
             if resp.content_type != "application/gzip":
+                logger.error(
+                    f"Content-type for crate {name}/{version} is {resp.content_type}. Cannot download crate, skipping..."
+                )
                 return None
 
             chunk_size = 1024 * 4
@@ -145,7 +148,7 @@ async def analyse_crate(
                 await f.write(data)
 
         # unpack archive
-
+        logger.info(f"Unpacking crate {name}/{version}")
         proc = await asyncio.subprocess.create_subprocess_exec(
             "tar",
             "-xf",

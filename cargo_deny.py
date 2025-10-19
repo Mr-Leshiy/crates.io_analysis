@@ -13,7 +13,7 @@ class CargoDenyInfo:
 
 
 class CargoDenyAdvisoryInfo:
-    lints = {
+    lints = [
         "vulnerability",
         "notice",
         "unmaintained",
@@ -26,7 +26,7 @@ class CargoDenyAdvisoryInfo:
         "unknown-advisory",
         "yanked-ignored",
         "yanked-not-detected",
-    }
+    ]
 
     async def analyze(crate_name, dir_name, config_path) -> list[int]:
         """
@@ -49,24 +49,63 @@ class CargoDenyAdvisoryInfo:
 
         # triggers installing necessary tollchain for the crate
         proc = await asyncio.subprocess.create_subprocess_shell(
-                "cargo info",
-                cwd=f"{dir_name}",
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-                stdin=asyncio.subprocess.DEVNULL,
+            "cargo info",
+            cwd=f"{dir_name}",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.DEVNULL,
         )
         await proc.wait()
 
-        return await asyncio.gather(
-            *[
-                CargoDenyAdvisoryInfo.advisories_check(
-                    crate_name, dir_name, config_path, entry
-                )
-                for entry in CargoDenyAdvisoryInfo.lints
-            ]
+        # return await asyncio.gather(
+        #     *[
+        #         CargoDenyAdvisoryInfo.advisories_check(
+        #             crate_name, dir_name, config_path, entry
+        #         )
+        #         for entry in CargoDenyAdvisoryInfo.lints
+        #     ]
+        # )
+        return await CargoDenyAdvisoryInfo.advisories_check_2(
+            crate_name, dir_name, config_path
         )
 
-    async def advisories_check(
+    async def advisories_check_2(
+        crate_name,
+        dir_name,
+        config_path,
+    ):
+        command = " ".join(
+            [
+                "cargo",
+                "deny",
+                "check",
+                "advisories",
+                "--exclude-dev",
+                f"--config={config_path}",
+                *[f"--deny={l}" for l in CargoDenyAdvisoryInfo.lints],
+            ]
+        )
+        proc = await asyncio.subprocess.create_subprocess_shell(
+            command,
+            cwd=f"{dir_name}",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            stdin=asyncio.subprocess.DEVNULL,
+        )
+        stats = {l: 0 for l in CargoDenyAdvisoryInfo.lints}
+        while not proc.stderr.at_eof():
+            err_line = await proc.stderr.readline()
+            # we need to parse the following string
+            # error[<lint code>]: error description
+            if err_line[:5] != b"error":
+                continue
+            lint = err_line[6 : err_line.find(b"]")].decode("utf-8")
+            logger.info(lint)
+            stats[lint] += 1
+
+        return [stats[lint] for lint in CargoDenyAdvisoryInfo.lints]
+
+    async def old_advisories_check(
         crate_name,
         dir_name,
         config_path,
