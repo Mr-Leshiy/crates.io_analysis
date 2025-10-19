@@ -100,7 +100,6 @@ class CargoDenyAdvisoryInfo:
             if err_line[:5] != b"error":
                 continue
             lint = err_line[6 : err_line.find(b"]")].decode("utf-8")
-            logger.info(lint)
             stats[lint] += 1
 
         return [stats[lint] for lint in CargoDenyAdvisoryInfo.lints]
