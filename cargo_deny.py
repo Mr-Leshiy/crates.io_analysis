@@ -97,9 +97,10 @@ class CargoDenyAdvisoryInfo:
             err_line = await proc.stderr.readline()
             # we need to parse the following string
             # error[<lint code>]: error description
-            if err_line[:5] != b"error":
+            index = err_line.find(b"]")
+            if err_line[:6] != b"error[" or not index:
                 continue
-            lint = err_line[6 : err_line.find(b"]")].decode("utf-8")
+            lint = err_line[6 : index].decode("utf-8")
             stats[lint] += 1
 
         return [stats[lint] for lint in CargoDenyAdvisoryInfo.lints]
