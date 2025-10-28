@@ -3,6 +3,7 @@ mod types;
 use std::{ops::Not, path::PathBuf, time::Duration};
 
 use bytes::Buf;
+use flate2::read::GzDecoder;
 use reqwest::{
     Client, ClientBuilder,
     header::{CONTENT_TYPE, USER_AGENT},
@@ -46,12 +47,14 @@ impl CratesIoApi {
         };
 
         for attempt in 1..11 {
-            let c = self.c.lock().await;
-            let resp = c
-                .get(format!("{CRATES_IO_URL}/v1/crates{args}"))
-                .header(USER_AGENT, USER_AGENT_HEADER)
-                .send()
-                .await?;
+            let resp = {
+                let c = self.c.lock().await;
+                c.get(format!("{CRATES_IO_URL}/v1/crates{args}"))
+                    .header(USER_AGENT, USER_AGENT_HEADER)
+                    .send()
+                    .await?
+            };
+
             if !resp.status().is_success() {
                 tracing::error!(status_code = ?resp.status(), attempt=attempt,  "Failled to call 'crates.io/v1/crates' endpoint. Retrying...");
                 self.reset().await?;
@@ -86,12 +89,13 @@ impl CratesIoApi {
         name: &CrateName,
     ) -> anyhow::Result<Vec<CrateVersionInfo>> {
         for attempt in 1..11 {
-            let c = self.c.lock().await;
-            let resp = c
-                .get(format!("{CRATES_IO_URL}/v1/crates/{name}/versions"))
-                .header(USER_AGENT, USER_AGENT_HEADER)
-                .send()
-                .await?;
+            let resp = {
+                let c = self.c.lock().await;
+                c.get(format!("{CRATES_IO_URL}/v1/crates/{name}/versions"))
+                    .header(USER_AGENT, USER_AGENT_HEADER)
+                    .send()
+                    .await?
+            };
             if !resp.status().is_success() {
                 tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/versions' endpoint. Retrying...");
                 self.reset().await?;
@@ -113,28 +117,31 @@ impl CratesIoApi {
         anyhow::bail!("Failled to call 'crates.io/v1/crates/{{name}}/versions' endpoint");
     }
 
-    pub async fn download_crate_to(
+    pub async fn download_and_unpack_crate_to(
         &self,
         name: &CrateName,
         version: &CrateVersion,
         out: PathBuf,
     ) -> anyhow::Result<()> {
-        let c = self.c.lock().await;
-
         tracing::info!(
             crate_name = name,
             crate_version = version,
             "Downloading crate..."
         );
-        let resp = c
-            .get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}/download"))
+        let resp = {
+            let c = self.c.lock().await;
+            c.get(format!(
+                "{CRATES_IO_URL}/v1/crates/{name}/{version}/download"
+            ))
             .header(USER_AGENT, USER_AGENT_HEADER)
             .send()
-            .await?;
+            .await?
+        };
 
-        let content_type = resp.headers().get(CONTENT_TYPE).ok_or(anyhow::anyhow!(
-            "Content-type is missing."
-        ))?;
+        let content_type = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .ok_or(anyhow::anyhow!("Content-type is missing."))?;
         anyhow::ensure!(
             content_type.to_str()? == "application/gzip",
             "Content-type is {content_type:?}",
@@ -145,8 +152,14 @@ impl CratesIoApi {
             crate_version = version,
             "Unpacking crate..."
         );
-        let mut archive = Archive::new(resp.bytes().await?.reader());
-        archive.unpack(out)?;
+
+        let bytes = resp.bytes().await?;
+        let  gz: GzDecoder<bytes::buf::Reader<bytes::Bytes>> = GzDecoder::new(bytes.reader());
+        let mut archive = Archive::new(gz);
+        if let Err(err) = archive.unpack(out) {
+            tracing::error!(err = ?err);
+            return Err(err.into());
+        }
         Ok(())
     }
 }

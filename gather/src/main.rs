@@ -37,7 +37,7 @@ async fn main() -> anyhow::Result<()> {
             for crate_ver in api.get_crate_versions(&name).await? {
                 let version = &crate_ver.version;
                 if let Err(e) = api
-                    .download_crate_to(&name, version, format!("{name}_{version}").into())
+                    .download_and_unpack_crate_to(&name, version, format!("{name}_{version}").into())
                     .await
                 {
                     tracing::error!(
