@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+use crate::crates_io::CratesIoApi;
+
 #[derive(Parser, Debug)]
 struct Cli {
     /// Number of crates for simultaneous download and processing
@@ -26,14 +28,30 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::try_parse()?;
     tracing::info!(cli = ?cli, "Starting downloading and analyzing crates from crates.io...");
 
+    let api = CratesIoApi::new()?;
     let mut next_page = cli.next_page;
     loop {
-        let resp = crates_io::get_crates_names(cli.crates_num, next_page).await?;
+        let resp = api.get_crates_names(cli.crates_num, next_page).await?;
         next_page = resp.1;
+        for name in resp.0 {
+            for crate_ver in api.get_crate_versions(&name).await? {
+                let version = &crate_ver.version;
+                if let Err(e) = api
+                    .download_crate_to(&name, version, format!("{name}_{version}").into())
+                    .await
+                {
+                    tracing::error!(
+                        crate_name = name,
+                        crate_version = version,
+                        err = e.to_string(),
+                        "Cannot download crate, skipping..."
+                    );
+                }
+            }
+        }
         if next_page.is_none() {
             break;
         }
-        let crates_names = resp.0;
         break;
     }
 
