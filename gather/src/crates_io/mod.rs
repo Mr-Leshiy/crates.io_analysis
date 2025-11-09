@@ -1,6 +1,10 @@
 mod types;
 
-use std::{ops::Not, path::PathBuf, time::Duration};
+use std::{
+    ops::Not,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use bytes::Buf;
 use flate2::read::GzDecoder;
@@ -11,7 +15,7 @@ use reqwest::{
 use tar::Archive;
 use tokio::sync::Mutex;
 
-use crate::crates_io::types::{CrateName, CrateVersion, CrateVersionInfo, NextPage};
+pub use types::{CrateName, CrateVersion, CrateVersionInfo, NextPage};
 
 const CRATES_IO_URL: &str = "https://crates.io/api";
 const USER_AGENT_HEADER: &str =
@@ -121,8 +125,8 @@ impl CratesIoApi {
         &self,
         name: &CrateName,
         version: &CrateVersion,
-        out: PathBuf,
-    ) -> anyhow::Result<()> {
+        out: &Path,
+    ) -> anyhow::Result<PathBuf> {
         tracing::info!(
             crate_name = name,
             crate_version = version,
@@ -154,12 +158,11 @@ impl CratesIoApi {
         );
 
         let bytes = resp.bytes().await?;
-        let  gz: GzDecoder<bytes::buf::Reader<bytes::Bytes>> = GzDecoder::new(bytes.reader());
+        let gz: GzDecoder<bytes::buf::Reader<bytes::Bytes>> = GzDecoder::new(bytes.reader());
         let mut archive = Archive::new(gz);
-        if let Err(err) = archive.unpack(out) {
-            tracing::error!(err = ?err);
-            return Err(err.into());
-        }
-        Ok(())
+
+        archive.unpack(out)?;
+
+        Ok(out.join(format!("{name}-{version}")).to_path_buf())
     }
 }
