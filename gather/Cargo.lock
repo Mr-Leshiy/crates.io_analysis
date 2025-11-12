@@ -1231,6 +1231,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "strum",
  "tar",
  "tempdir",
  "tokio",

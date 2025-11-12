@@ -1,10 +1,19 @@
+mod analyze;
+mod analyzed_info;
 mod crates_io;
 
-use std::path::PathBuf;
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 use clap::Parser;
 
-use crate::crates_io::CratesIoApi;
+use crate::{
+    analyze::analyze,
+    analyzed_info::AnalyzedCrateInfo,
+    crates_io::{CrateName, CrateVersion, CratesIoApi},
+};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -30,23 +39,35 @@ async fn main() -> anyhow::Result<()> {
 
     let api = CratesIoApi::new()?;
     let mut next_page = cli.next_page;
+    let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(cli.out)?);
+    AnalyzedCrateInfo::write_header(&mut csv_w)?;
     loop {
         let resp = api.get_crates_names(cli.crates_num, next_page).await?;
         next_page = resp.1;
+
+        // for name in ["did-resolver-cheqd".to_string()] {
         for name in resp.0 {
+            let tmp_dir = tempdir::TempDir::new("crates_io")?;
+
             for crate_ver in api.get_crate_versions(&name).await? {
-                let version = &crate_ver.version;
-                if let Err(e) = api
-                    .download_and_unpack_crate_to(&name, version, format!("{name}_{version}").into())
-                    .await
+                if let Some(info) = process_crate_version(
+                    &api,
+                    &name,
+                    &crate_ver.version,
+                    tmp_dir.path(), // &Path::new("/Users/alexeypoghilenkov/Projects/crates.io_analyses/gather"),
+                )
+                .await?
                 {
-                    tracing::error!(
-                        crate_name = name,
-                        crate_version = version,
-                        err = e.to_string(),
-                        "Cannot download crate, skipping..."
-                    );
+                    analyzed_info::AnalyzedCrateInfo {
+                        name: name.clone(),
+                        version: crate_ver.version,
+                        downloads: crate_ver.downloads,
+                        created_at: crate_ver.created_at,
+                        info,
+                    }
+                    .write_record(&mut csv_w)?;
                 }
+                break;
             }
         }
         if next_page.is_none() {
@@ -56,4 +77,27 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn process_crate_version(
+    api: &CratesIoApi,
+    crate_name: &CrateName,
+    crate_ver: &CrateVersion,
+    path: &Path,
+) -> anyhow::Result<Option<analyzed_info::CrateInfo>> {
+    match api
+        .download_and_unpack_crate_to(&crate_name, crate_ver, path)
+        .await
+    {
+        Ok(crate_dir) => analyze(&crate_dir).await.map(Some),
+        Err(e) => {
+            tracing::error!(
+                crate_name = crate_name,
+                crate_version = crate_ver,
+                err = e.to_string(),
+                "Cannot download crate, skipping..."
+            );
+            Ok(None)
+        }
+    }
 }

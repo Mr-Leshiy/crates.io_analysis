@@ -13,18 +13,14 @@ use cargo::{
 use cargo_deny::{
     CheckCtx, Spanned, UnvalidatedConfig,
     advisories::{self, cfg::Config},
-    diag::{ErrorSink, Files, KrateSpans},
+    diag::{DiagnosticCode, ErrorSink, Files, KrateSpans},
     utf8path,
 };
 use krates::{NoneFilter, Utf8PathBuf};
 
-#[derive(Debug, Clone)]
-pub struct CrateInfo {
-    pub direct_deps: usize,
-    pub all_deps: usize,
-}
+use crate::analyzed_info;
 
-pub async fn analyze(crate_dir: &Path) -> anyhow::Result<CrateInfo> {
+pub async fn analyze(crate_dir: &Path) -> anyhow::Result<analyzed_info::CrateInfo> {
     tracing::info!(
         crate_dir = ?crate_dir,
         "Analyzing crate..."
@@ -39,11 +35,12 @@ pub async fn analyze(crate_dir: &Path) -> anyhow::Result<CrateInfo> {
     let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &ctx)?;
 
     let (direct_deps, all_deps) = get_crate_deps_count(&ws)?;
-    cargo_deny_check(&ws)?;
+    let advisories = cargo_deny_advisories_check(&ws)?;
 
-    let info = CrateInfo {
+    let info = analyzed_info::CrateInfo {
         direct_deps,
         all_deps,
+        advisories,
     };
     tracing::info!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
 
@@ -105,7 +102,7 @@ static ADVISORY_DB: LazyLock<anyhow::Result<advisories::DbSet>> = LazyLock::new(
     advisories::DbSet::load(db_path, vec![], advisories::Fetch::Allow)
 });
 
-fn cargo_deny_check(ws: &Workspace) -> anyhow::Result<()> {
+fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<analyzed_info::AdvisoriesResults> {
     let mut files = Files::new();
     // write down default `deny.default.toml`
     let cfg_id = files.add(
@@ -178,9 +175,12 @@ fn cargo_deny_check(ws: &Workspace) -> anyhow::Result<()> {
         advisories_sink,
     );
 
+    let mut res = analyzed_info::AdvisoriesResults::new();
     for d in rx.iter().flat_map(|p| p.into_iter()) {
-        tracing::info!(code = ?d.code, message = d.diag.message);
+        if let Some(DiagnosticCode::Advisory(code)) = d.code {
+            res.inc(code)?;
+        }
     }
 
-    Ok(())
+    Ok(res)
 }
