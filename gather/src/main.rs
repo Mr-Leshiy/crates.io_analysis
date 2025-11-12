@@ -45,7 +45,6 @@ async fn main() -> anyhow::Result<()> {
         let resp = api.get_crates_names(cli.crates_num, next_page).await?;
         next_page = resp.1;
 
-        // for name in ["did-resolver-cheqd".to_string()] {
         for name in resp.0 {
             let tmp_dir = tempdir::TempDir::new("crates_io")?;
 
@@ -54,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
                     &api,
                     &name,
                     &crate_ver.version,
-                    tmp_dir.path(), // &Path::new("/Users/alexeypoghilenkov/Projects/crates.io_analyses/gather"),
+                    tmp_dir.path(),
                 )
                 .await?
                 {
@@ -67,13 +66,11 @@ async fn main() -> anyhow::Result<()> {
                     }
                     .write_record(&mut csv_w)?;
                 }
-                break;
             }
         }
         if next_page.is_none() {
             break;
         }
-        break;
     }
 
     Ok(())
