@@ -13,7 +13,7 @@ use cargo::{
 use cargo_deny::{
     CheckCtx, Spanned, UnvalidatedConfig,
     advisories::{self, cfg::Config},
-    diag::{DiagnosticCode, ErrorSink, Files, KrateSpans},
+    diag::{DiagnosticCode, DiagnosticOverrides, ErrorSink, Files, KrateSpans, Severity},
     utf8path,
 };
 use krates::{NoneFilter, Utf8PathBuf};
@@ -162,8 +162,17 @@ fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<analyzed_info::
     let audit_reporter = Some(|_| {});
 
     let (tx, rx) = crossbeam_channel::unbounded();
+    let overrides = Some(
+        DiagnosticOverrides {
+            code_overrides: DiagnosticCode::iter()
+                .map(|v| (v.as_str(), Severity::Error))
+                .collect(),
+            level_overrides: vec![],
+        }
+        .into(),
+    );
     let advisories_sink = ErrorSink {
-        overrides: None,
+        overrides,
         channel: tx,
     };
 
