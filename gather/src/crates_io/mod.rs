@@ -72,7 +72,7 @@ impl CratesIoApi {
                     Some(pair.to_string())
                 })
             });
-            tracing::info!(
+            tracing::debug!(
                 next_page = next_page,
                 total_crates_amount = resp.meta.total,
                 "Successfully get crate names info"
@@ -107,7 +107,7 @@ impl CratesIoApi {
             }
 
             let resp = serde_json::from_slice::<types::CrateVersionsResp>(&resp.bytes().await?)?;
-            tracing::info!(
+            tracing::debug!(
                 versions_count = resp.versions.len(),
                 crate_name = name,
                 "Successfully get crate versions info."
@@ -127,7 +127,7 @@ impl CratesIoApi {
         version: &CrateVersion,
         out: &Path,
     ) -> anyhow::Result<PathBuf> {
-        tracing::info!(
+        tracing::debug!(
             crate_name = name,
             crate_version = version,
             "Downloading crate..."
@@ -151,7 +151,7 @@ impl CratesIoApi {
             "Content-type is {content_type:?}",
         );
 
-        tracing::info!(
+        tracing::debug!(
             crate_name = name,
             crate_version = version,
             "Unpacking crate..."

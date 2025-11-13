@@ -54,7 +54,7 @@ impl AnalyzedCrateInfo {
         csv_w.write_field(self.info.direct_deps.to_string())?;
         csv_w.write_field(self.info.all_deps.to_string())?;
 
-        for (_, fails) in &self.info.advisories.0 {
+        for fails in self.info.advisories.0.values() {
             csv_w.write_field(fails.to_string())?;
         }
 

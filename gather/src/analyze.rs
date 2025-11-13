@@ -20,8 +20,8 @@ use krates::{NoneFilter, Utf8PathBuf};
 
 use crate::analyzed_info;
 
-pub async fn analyze(crate_dir: &Path) -> anyhow::Result<analyzed_info::CrateInfo> {
-    tracing::info!(
+pub async fn analyze(crate_dir: &Path) -> anyhow::Result<Option<analyzed_info::CrateInfo>> {
+    tracing::debug!(
         crate_dir = ?crate_dir,
         "Analyzing crate..."
     );
@@ -35,16 +35,18 @@ pub async fn analyze(crate_dir: &Path) -> anyhow::Result<analyzed_info::CrateInf
     let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &ctx)?;
 
     let (direct_deps, all_deps) = get_crate_deps_count(&ws)?;
-    let advisories = cargo_deny_advisories_check(&ws)?;
+    let Some(advisories) = cargo_deny_advisories_check(&ws)? else {
+        return Ok(None);
+    };
 
     let info = analyzed_info::CrateInfo {
         direct_deps,
         all_deps,
         advisories,
     };
-    tracing::info!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
+    tracing::debug!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
 
-    Ok(info)
+    Ok(Some(info))
 }
 
 fn get_crate_deps_count(ws: &Workspace) -> anyhow::Result<(usize, usize)> {
@@ -53,7 +55,7 @@ fn get_crate_deps_count(ws: &Workspace) -> anyhow::Result<(usize, usize)> {
     };
 
     let specs = [member.package_id().to_spec()];
-    let requested_kinds = CompileKind::from_requested_targets(ws.gctx(), &vec![])?;
+    let requested_kinds = CompileKind::from_requested_targets(ws.gctx(), &[])?;
     let mut target_data = RustcTargetData::new(ws, &requested_kinds)?;
     let cli_features = CliFeatures::new_all(true);
     let dry_run = false;
@@ -102,11 +104,13 @@ static ADVISORY_DB: LazyLock<anyhow::Result<advisories::DbSet>> = LazyLock::new(
     advisories::DbSet::load(db_path, vec![], advisories::Fetch::Allow)
 });
 
-fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<analyzed_info::AdvisoriesResults> {
+fn cargo_deny_advisories_check(
+    ws: &Workspace,
+) -> anyhow::Result<Option<analyzed_info::AdvisoriesResults>> {
     let mut files = Files::new();
     // write down default `deny.default.toml`
     let cfg_id = files.add(
-        &cargo_deny::PathBuf::from("deny.default.toml"),
+        cargo_deny::PathBuf::from("deny.default.toml"),
         String::new(),
     );
 
@@ -137,7 +141,13 @@ fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<analyzed_info::
             version: 1,
             filter_platforms: vec![],
         };
-        let md = cargo::ops::output_metadata(&ws, &options)?;
+        // its possible because of some rare feature flags with some optional dependencies,
+        // with enabling all feature flags all together clashes dependencies.
+        // For such rare cases just skip analyzing such crates.
+        // Was failed for `swc_atlaskit_tokens/v0.0.3` crate.
+        let Ok(md) = cargo::ops::output_metadata(ws, &options) else {
+            return Ok(None);
+        };
         let md = serde_json::from_value::<krates::cm::Metadata>(serde_json::to_value(md)?)?;
 
         let mut kb = krates::Builder::new();
@@ -178,7 +188,7 @@ fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<analyzed_info::
 
     advisories::check(
         ctx,
-        &advisory_db_set,
+        advisory_db_set,
         audit_reporter,
         indices,
         advisories_sink,
@@ -191,5 +201,5 @@ fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<analyzed_info::
         }
     }
 
-    Ok(res)
+    Ok(Some(res))
 }
