@@ -8,6 +8,8 @@ use std::{
 };
 
 use clap::{Parser, ValueEnum};
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 use crate::{
     analyze::analyze,
@@ -46,7 +48,7 @@ pub(crate) enum LogLevel {
     Error,
 }
 
-impl From<LogLevel> for tracing::level_filters::LevelFilter {
+impl From<LogLevel> for LevelFilter {
     fn from(val: LogLevel) -> Self {
         match val {
             LogLevel::Debug => Self::DEBUG,
@@ -61,9 +63,13 @@ impl From<LogLevel> for tracing::level_filters::LevelFilter {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::try_parse()?;
 
-    tracing_subscriber::fmt()
-        .with_max_level(cli.log_level)
-        .init();
+    let filter = EnvFilter::builder()
+        .from_env()?
+        .add_directive(LevelFilter::from(cli.log_level).into())
+        .add_directive("cargo_deny=error".parse()?)
+        .add_directive("cargo=error".parse()?);
+
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     tracing::info!(cli = ?cli, "Starting downloading and analyzing crates from crates.io...");
 
