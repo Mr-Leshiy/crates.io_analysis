@@ -3,11 +3,9 @@ use std::{collections::BTreeMap, ops::AddAssign};
 use cargo_deny::advisories;
 use strum::IntoEnumIterator;
 
-use crate::crates_io::{CrateName, CrateVersion};
-
 pub struct AnalyzedCrateInfo {
-    pub name: CrateName,
-    pub version: CrateVersion,
+    pub name: String,
+    pub version: String,
     pub downloads: u32,
     pub created_at: String,
     pub info: CrateInfo,

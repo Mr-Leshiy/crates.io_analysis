@@ -1,31 +1,30 @@
 mod analyze;
 mod analyzed_info;
-mod crates_io;
 
+use indicatif::ProgressStyle;
+use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 use std::{
+    ffi::OsStr,
     fs::File,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
+    thread,
 };
 
 use clap::{Parser, ValueEnum};
-use tracing::level_filters::LevelFilter;
-use tracing_subscriber::EnvFilter;
+use rayon::ThreadPoolBuilder;
+use tracing::{level_filters::LevelFilter, Span};
+use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
+use walkdir::WalkDir;
 
-use crate::{
-    analyze::analyze,
-    analyzed_info::AnalyzedCrateInfo,
-    crates_io::{CrateName, CrateVersion, CratesIoApi},
-};
+use crate::{analyze::analyze, analyzed_info::AnalyzedCrateInfo};
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Number of crates for simultaneous download and processing
-    #[clap(long, default_value_t = 1)]
-    crates_num: u8,
-
-    /// crates.io 'v1/crates' 'seek' query argument
+    /// Path to the downloaded crates index.
     #[clap(long)]
-    next_page: Option<String>,
+    crates_index: PathBuf,
 
     /// Output csv filename path
     #[clap(long, default_value = "crates_info.csv")]
@@ -59,76 +58,111 @@ impl From<LogLevel> for LevelFilter {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let cli = Cli::try_parse()?;
+fn setup_tracing(log_level: LogLevel) -> anyhow::Result<()> {
+    let indicatif_layer = IndicatifLayer::new();
 
     let filter = EnvFilter::builder()
         .from_env()?
-        .add_directive(LevelFilter::from(cli.log_level).into())
+        .add_directive(LevelFilter::from(log_level).into())
         .add_directive("cargo_deny=error".parse()?)
         .add_directive("cargo=error".parse()?);
 
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    let log_layer = tracing_subscriber::fmt::layer()
+        .with_target(false)
+        .without_time()
+        .with_filter(filter);
 
-    tracing::info!(cli = ?cli, "Starting downloading and analyzing crates from crates.io...");
+    tracing_subscriber::registry()
+        .with(log_layer)
+        .with(indicatif_layer)
+        .init();
+    Ok(())
+}
 
-    let api = CratesIoApi::new()?;
-    let mut next_page = cli.next_page;
+fn main() -> anyhow::Result<()> {
+    let cli = Cli::try_parse()?;
+
+    setup_tracing(cli.log_level)?;
+
+    let num_threads = thread::available_parallelism().map_or(1, NonZeroUsize::get);
+    tracing::info!(cli = ?cli, num_threads = num_threads, "Starting analyzing crates from crates.io...");
+
+    ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build_global()?;
     let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(cli.out)?);
     AnalyzedCrateInfo::write_header(&mut csv_w)?;
-    let mut analyzed = 0;
-    loop {
-        let resp = api.get_crates_names(cli.crates_num, next_page).await?;
-        next_page = resp.1;
 
-        for name in resp.0 {
-            let tmp_dir = tempdir::TempDir::new("crates_io")?;
-
-            for crate_ver in api.get_crate_versions(&name).await? {
-                if let Some(info) =
-                    process_crate_version(&api, &name, &crate_ver.version, tmp_dir.path()).await?
-                {
-                    AnalyzedCrateInfo {
-                        name: name.clone(),
-                        version: crate_ver.version,
-                        downloads: crate_ver.downloads,
-                        created_at: crate_ver.created_at,
-                        info,
-                    }
-                    .write_record(&mut csv_w)?;
-                    analyzed += 1;
-                }
-            }
-        }
-        tracing::info!(analyzed = analyzed, next_page = next_page);
-        if next_page.is_none() {
-            break;
-        }
-    }
+    let all_crates = get_all_crates(&cli.crates_index);
+    process_crates(&all_crates)?;
 
     Ok(())
 }
 
-async fn process_crate_version(
-    api: &CratesIoApi,
-    crate_name: &CrateName,
-    crate_ver: &CrateVersion,
-    path: &Path,
-) -> anyhow::Result<Option<analyzed_info::CrateInfo>> {
-    match api
-        .download_and_unpack_crate_to(crate_name, crate_ver, path)
-        .await
-    {
-        Ok(crate_dir) => analyze(&crate_dir).await,
-        Err(e) => {
-            tracing::error!(
-                crate_name = crate_name,
-                crate_version = crate_ver,
-                err = e.to_string(),
-                "Cannot download crate, skipping..."
-            );
-            Ok(None)
-        }
+fn get_all_crates(crates_index: &Path) -> Vec<PathBuf> {
+    fn is_not_hidden(e: &walkdir::DirEntry) -> bool {
+        !e.file_name().to_str().is_some_and(|s| s.starts_with('.'))
     }
+
+    fn is_file(e: &walkdir::DirEntry) -> bool {
+        e.file_type().is_file()
+    }
+
+    fn is_crate_archive(e: &walkdir::DirEntry) -> bool {
+        matches!(
+            e.path().extension().map(OsStr::to_str).flatten(),
+            Some("crate")
+        )
+    }
+
+    WalkDir::new(crates_index)
+        .into_iter()
+        .par_bridge()
+        .filter_map(|e| {
+            e.inspect_err(|err| tracing::warn!(?err, "walkdir result is error"))
+                .ok()
+        })
+        .filter(|e| is_not_hidden(e) && is_file(e) && is_crate_archive(e))
+        .map(|e| e.into_path())
+        .collect()
 }
+
+fn process_crates(crates: &[PathBuf]) -> anyhow::Result<()> {
+     let pb_style =
+        ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}").unwrap();
+
+    let span = Span::current();
+    span.pb_set_style(&pb_style);
+    span.pb_set_length(crates.len().try_into()?);
+
+    crates.par_iter().try_for_each(|p| -> anyhow::Result<()> {
+        let name = p.file_name().map(OsStr::to_str).flatten().ok_or(anyhow::anyhow!("Must have a file name"))?;
+        span.pb_set_message(name);
+        span.pb_inc(1);
+        Ok(())
+    })?;
+
+    Ok(())
+}
+// async fn process_crate_version(
+//     api: &CratesIoApi,
+//     crate_name: &CrateName,
+//     crate_ver: &CrateVersion,
+//     path: &Path,
+// ) -> anyhow::Result<Option<analyzed_info::CrateInfo>> {
+//     match api
+//         .download_and_unpack_crate_to(crate_name, crate_ver, path)
+//         .await
+//     {
+//         Ok(crate_dir) => analyze(&crate_dir).await,
+//         Err(e) => {
+//             tracing::error!(
+//                 crate_name = crate_name,
+//                 crate_version = crate_ver,
+//                 err = e.to_string(),
+//                 "Cannot download crate, skipping..."
+//             );
+//             Ok(None)
+//         }
+//     }
+// }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path, sync::LazyLock};
+use std::{collections::HashMap, fs::File, path::Path, sync::LazyLock};
 
 use cargo::{
     GlobalContext,
@@ -18,7 +18,27 @@ use cargo_deny::{
 };
 use krates::{NoneFilter, Utf8PathBuf};
 
+use flate2::read::GzDecoder;
+use tar::Archive;
+
 use crate::analyzed_info;
+
+pub fn unpack(path: &Path) -> anyhow::Result<()> {
+    tracing::debug!(
+        path = ?path,
+        "Unpacking crate..."
+    );
+
+    let crate_file = File::open(path)?;
+    let gz = GzDecoder::new(crate_file);
+    let mut archive = Archive::new(gz);
+
+    let out = path.parent().ok_or(anyhow::anyhow!(
+        "Provided crate archive must have a parent directory"
+    ))?;
+    archive.unpack(out)?;
+    Ok(())
+}
 
 pub async fn analyze(crate_dir: &Path) -> anyhow::Result<Option<analyzed_info::CrateInfo>> {
     tracing::debug!(
