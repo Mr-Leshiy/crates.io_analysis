@@ -48,7 +48,6 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
     let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
 
     let span = Span::current();
-    anyhow::ensure!(!span.is_disabled());
     span.pb_set_style(&pb_style);
     span.pb_set_length(crates_number.try_into()?);
     span.pb_set_finish_message(&format!(
