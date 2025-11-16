@@ -1,14 +1,12 @@
 mod analyze;
 mod crates_index;
 
-use indicatif::ProgressStyle;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{ffi::OsStr, fs::File, num::NonZeroUsize, path::PathBuf, thread};
+use std::{fs::File, num::NonZeroUsize, path::PathBuf, thread};
 
 use clap::{Parser, ValueEnum};
 use rayon::ThreadPoolBuilder;
-use tracing::{Span, level_filters::LevelFilter};
-use tracing_indicatif::{IndicatifLayer, span_ext::IndicatifSpanExt};
+use tracing::level_filters::LevelFilter;
+use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{analyze::types::AnalyzedCrateInfo, crates_index::get_all_crates_versions};
@@ -16,7 +14,7 @@ use crate::{analyze::types::AnalyzedCrateInfo, crates_index::get_all_crates_vers
 #[derive(Parser, Debug)]
 struct Cli {
     /// Path to the downloaded crates index.
-    #[clap(long, default_value = "/Users/alexeypoghilenkov/Projects/crates_index")]
+    #[clap(long)]
     crates_index: PathBuf,
 
     /// Output csv filename path
