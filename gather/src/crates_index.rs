@@ -8,6 +8,7 @@ use std::{
 
 use indicatif::ProgressStyle;
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use semver::Version;
 use serde::Deserialize;
 use tempdir::TempDir;
 use tracing::{Level, Span, event};
@@ -18,7 +19,7 @@ use walkdir::WalkDir;
 pub struct CrateVersion {
     pub name: String,
     #[serde(rename = "vers")]
-    pub version: String,
+    pub version: Version,
     pub yanked: bool,
 }
 

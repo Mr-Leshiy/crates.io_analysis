@@ -1234,6 +1234,7 @@ dependencies = [
  "krates",
  "log",
  "rayon",
+ "semver",
  "serde",
  "serde_json",
  "strum",
