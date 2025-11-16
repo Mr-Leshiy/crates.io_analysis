@@ -13,6 +13,6 @@ gather-build:
     WORKDIR /app
     COPY ./gather .
     RUN cargo b --release
-    ENTRYPOINT ["./target/release/gather", "--crates_index", "/crates_index"]
+    ENTRYPOINT ["./target/release/gather", "--crates-index", "/crates_index"]
 
     SAVE IMAGE gather:latest
