@@ -13,4 +13,5 @@ gather-build:
     WORKDIR /app
     COPY ./gather .
     RUN cargo b --release
-    RUN ./target/release/gather --crates-index /crates_index
+    ENTRYPOINT ["sleep", "infinity"]
+    # RUN ./target/release/gather --crates-index /crates_index
