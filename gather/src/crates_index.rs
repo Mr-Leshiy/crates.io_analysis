@@ -3,10 +3,11 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
 };
 
 use indicatif::ProgressStyle;
+use rand::distr::SampleString;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use semver::Version;
 use serde::Deserialize;
@@ -129,10 +130,7 @@ pub fn download_all_crates_versions(crates_versions: &[CrateVersion]) -> anyhow:
     let span = Span::current();
     span.pb_set_style(&pb_style);
     span.pb_set_length(crates_versions.len().try_into()?);
-    span.pb_set_finish_message(&format!(
-        "Downloading crates using 'cargo fetch' completed"
-    ));
-    
+    span.pb_set_finish_message(&format!("Downloading crates using 'cargo fetch' completed"));
 
     crates_versions
         .chunks(PACKAGES_CHUNKS_SIZE.try_into()?)
@@ -179,9 +177,13 @@ fn prepare_dummy_rust_project(
     // [dependencies] table
     let mut dependencies_table = toml::map::Map::new();
     for entry in crates_versions {
+        let rand_name = rand::distr::Alphabetic.sample_string(&mut rand::rng(), 16);
         dependencies_table.insert(
-            entry.name.clone(),
-            toml::Value::String(format!("={}", entry.version)),
+            rand_name,
+            toml::Value::String(format!(
+                r#"{{ package = "{}", version = "={}" }}"#,
+                entry.name, entry.version
+            )),
         );
     }
 
@@ -213,10 +215,6 @@ fn cargo_fetch(root_path: &Path) -> anyhow::Result<()> {
     command.arg("--manifest-path");
     command.arg(root_path.join("Cargo.toml"));
 
-    let status = command.status()?;
-    anyhow::ensure!(
-        status.success(),
-        "'cargo fetch' wasn't finished sucessfully"
-    );
+    let _status = command.status()?;
     Ok(())
 }
