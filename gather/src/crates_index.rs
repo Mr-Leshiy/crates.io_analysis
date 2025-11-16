@@ -84,15 +84,14 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
             // updating progress bar
             {
                 let file_name = d.path().file_name().and_then(|v| v.to_str());
-                file_name.inspect(|v| span.pb_set_message(v));
-                span.pb_inc(1);
+                file_name.inspect(|v| Span::current().pb_set_message(v));
+                Span::current().pb_inc(1);
             }
 
             read_crate_index_file(d.into_path())
                 .inspect_err(|err| {
                     tracing::warn!(err = err.to_string(), "Cannot read crate vesions from file")
                 })
-                .inspect(|_| span.pb_inc(1))
                 .ok()
         })
         .flatten()
