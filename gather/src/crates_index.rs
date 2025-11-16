@@ -3,7 +3,7 @@ use std::{
     fs::{self, File},
     io::Write,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
 };
 
 use indicatif::ProgressStyle;
@@ -11,7 +11,7 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 use semver::Version;
 use serde::Deserialize;
 use tempdir::TempDir;
-use tracing::{Level, Span, event};
+use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use walkdir::WalkDir;
 
@@ -192,6 +192,7 @@ fn prepare_dummy_rust_project(
 
 fn cargo_fetch(root_path: &Path) -> anyhow::Result<()> {
     let mut command = Command::new("cargo");
+    command.stderr(Stdio::null());
     command.arg("fetch");
     command.arg("--manifest-path");
     command.arg(root_path.join("Cargo.toml"));
