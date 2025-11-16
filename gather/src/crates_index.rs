@@ -178,13 +178,16 @@ fn prepare_dummy_rust_project(
     let mut dependencies_table = toml::map::Map::new();
     for entry in crates_versions {
         let rand_name = rand::distr::Alphabetic.sample_string(&mut rand::rng(), 16);
-        dependencies_table.insert(
-            rand_name,
-            toml::Value::String(format!(
-                r#"{{ package = "{}", version = "={}" }}"#,
-                entry.name, entry.version
-            )),
+        let mut dep = toml::map::Map::new();
+        dep.insert(
+            "package".to_string(),
+            toml::Value::String(entry.name.clone()),
         );
+        dep.insert(
+            "version".to_string(),
+            toml::Value::String(format!("={}", entry.version)),
+        );
+        dependencies_table.insert(rand_name, toml::Value::Table(dep));
     }
 
     root.insert(
