@@ -1,29 +1,22 @@
 mod analyze;
-mod analyzed_info;
+mod crates_index;
 
 use indicatif::ProgressStyle;
-use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
-use std::{
-    ffi::OsStr,
-    fs::File,
-    num::NonZeroUsize,
-    path::{Path, PathBuf},
-    thread,
-};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::{ffi::OsStr, fs::File, num::NonZeroUsize, path::PathBuf, thread};
 
 use clap::{Parser, ValueEnum};
 use rayon::ThreadPoolBuilder;
-use tracing::{level_filters::LevelFilter, Span};
-use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
+use tracing::{Span, level_filters::LevelFilter};
+use tracing_indicatif::{IndicatifLayer, span_ext::IndicatifSpanExt};
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
-use walkdir::WalkDir;
 
-use crate::{analyze::analyze, analyzed_info::AnalyzedCrateInfo};
+use crate::{analyze::types::AnalyzedCrateInfo, crates_index::get_all_crates_versions};
 
 #[derive(Parser, Debug)]
 struct Cli {
     /// Path to the downloaded crates index.
-    #[clap(long)]
+    #[clap(long, default_value = "/Users/alexeypoghilenkov/Projects/crates_index")]
     crates_index: PathBuf,
 
     /// Output csv filename path
@@ -93,57 +86,32 @@ fn main() -> anyhow::Result<()> {
     let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(cli.out)?);
     AnalyzedCrateInfo::write_header(&mut csv_w)?;
 
-    let all_crates = get_all_crates(&cli.crates_index);
-    process_crates(&all_crates)?;
+    let _all_crates = get_all_crates_versions(&cli.crates_index)?;
 
     Ok(())
 }
 
-fn get_all_crates(crates_index: &Path) -> Vec<PathBuf> {
-    fn is_not_hidden(e: &walkdir::DirEntry) -> bool {
-        !e.file_name().to_str().is_some_and(|s| s.starts_with('.'))
-    }
+// fn process_crates(crates: &[PathBuf]) -> anyhow::Result<()> {
+//     let pb_style =
+//         ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}").unwrap();
 
-    fn is_file(e: &walkdir::DirEntry) -> bool {
-        e.file_type().is_file()
-    }
+//     let span = Span::current();
+//     span.pb_set_style(&pb_style);
+//     span.pb_set_length(crates.len().try_into()?);
 
-    fn is_crate_archive(e: &walkdir::DirEntry) -> bool {
-        matches!(
-            e.path().extension().map(OsStr::to_str).flatten(),
-            Some("crate")
-        )
-    }
+//     crates.par_iter().try_for_each(|p| -> anyhow::Result<()> {
+//         let name = p
+//             .file_name()
+//             .map(OsStr::to_str)
+//             .flatten()
+//             .ok_or(anyhow::anyhow!("Must have a file name"))?;
+//         span.pb_set_message(name);
+//         span.pb_inc(1);
+//         Ok(())
+//     })?;
 
-    WalkDir::new(crates_index)
-        .into_iter()
-        .par_bridge()
-        .filter_map(|e| {
-            e.inspect_err(|err| tracing::warn!(?err, "walkdir result is error"))
-                .ok()
-        })
-        .filter(|e| is_not_hidden(e) && is_file(e) && is_crate_archive(e))
-        .map(|e| e.into_path())
-        .collect()
-}
-
-fn process_crates(crates: &[PathBuf]) -> anyhow::Result<()> {
-     let pb_style =
-        ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}").unwrap();
-
-    let span = Span::current();
-    span.pb_set_style(&pb_style);
-    span.pb_set_length(crates.len().try_into()?);
-
-    crates.par_iter().try_for_each(|p| -> anyhow::Result<()> {
-        let name = p.file_name().map(OsStr::to_str).flatten().ok_or(anyhow::anyhow!("Must have a file name"))?;
-        span.pb_set_message(name);
-        span.pb_inc(1);
-        Ok(())
-    })?;
-
-    Ok(())
-}
+//     Ok(())
+// }
 // async fn process_crate_version(
 //     api: &CratesIoApi,
 //     crate_name: &CrateName,
