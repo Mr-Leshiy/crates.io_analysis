@@ -180,19 +180,24 @@ fn prepare_dummy_rust_project(
     let mut file = fs::File::create(cargo_toml_path)?;
     file.write_all(cargo_toml_content.as_bytes())?;
 
-    // 4. Create dummy src/lib.rs (for a library project)
+    // Create dummy src/lib.rs (for a library project)
     let src_path = root_path.join("src");
     fs::create_dir(&src_path)?;
-    // Create an empty lib.rs file
     let lib_rs_path = src_path.join("lib.rs");
     File::create(lib_rs_path)?;
+    // Create dummy .cargo/config.toml (for a library project)
+    let cargo_path = root_path.join(".cargo");
+    fs::create_dir(&cargo_path)?;
+    let config_path = cargo_path.join("config.toml");
+    File::create(config_path)?.write_all( b"[build]\nwarnings = allow")?;
+
+   
 
     Ok(())
 }
 
 fn cargo_fetch(root_path: &Path) -> anyhow::Result<()> {
     let mut command = Command::new("cargo");
-    command.stderr(Stdio::null());
     command.arg("fetch");
     command.arg("--manifest-path");
     command.arg(root_path.join("Cargo.toml"));
