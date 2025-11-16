@@ -22,7 +22,7 @@ pub struct CrateVersion {
     pub yanked: bool,
 }
 
-#[tracing::instrument(skip_all)]
+#[tracing::instrument]
 pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateVersion>> {
     fn is_hidden(e: &walkdir::DirEntry) -> bool {
         e.file_name().to_str().is_some_and(|s| s.starts_with('.'))
@@ -83,8 +83,8 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
             // updating progress bar
             {
                 let file_name = d.path().file_name().and_then(|v| v.to_str());
-                file_name.inspect(|v| Span::current().pb_set_message(v));
-                Span::current().pb_inc(1);
+                file_name.inspect(|v| span.pb_set_message(v));
+                span.pb_inc(1);
             }
 
             read_crate_index_file(d.into_path())
