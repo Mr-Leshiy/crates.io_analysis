@@ -53,7 +53,6 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
     span.pb_set_finish_message(&format!(
         "Reading all crates versions from {crates_index:?} completed"
     ));
-    
 
     let mut iter = WalkDir::new(crates_index).sort_by_file_name().into_iter();
     let root = iter
@@ -95,6 +94,7 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
                 .ok()
         })
         .flatten()
+        .filter(|v| !v.yanked)
         .collect())
 }
 

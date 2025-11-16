@@ -9,7 +9,7 @@ use tracing::level_filters::LevelFilter;
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{analyze::types::AnalyzedCrateInfo, crates_index::get_all_crates_versions};
+use crate::{analyze::types::AnalyzedCrateInfo, crates_index::{download_all_crates_versions, get_all_crates_versions}};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -84,7 +84,8 @@ fn main() -> anyhow::Result<()> {
     let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(cli.out)?);
     AnalyzedCrateInfo::write_header(&mut csv_w)?;
 
-    let _all_crates = get_all_crates_versions(&cli.crates_index)?;
+    let all_crates = get_all_crates_versions(&cli.crates_index)?;
+    download_all_crates_versions(&all_crates)?;
 
     Ok(())
 }
