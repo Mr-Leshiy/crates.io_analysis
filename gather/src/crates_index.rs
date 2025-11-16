@@ -121,11 +121,18 @@ fn read_crate_index_file(
 /// The next step is to invoke `cargo fetch` on the freshly set crate.
 /// By doing this the proper downloading, invoked by the 'cargo' itself.
 pub fn download_all_crates_versions(crates_versions: &[CrateVersion]) -> anyhow::Result<()> {
-    let tempdir = TempDir::new("dummy_project")?;
+    const PACKAGES_CHUNKS_SIZE: usize = 100;
 
-    let root_path = tempdir.path();
-    prepare_dummy_rust_project(root_path, crates_versions)?;
-    cargo_fetch(root_path)?;
+    crates_versions
+        .chunks(PACKAGES_CHUNKS_SIZE)
+        .par_bridge()
+        .try_for_each(|crates| -> anyhow::Result<()> {
+            let tempdir = TempDir::new("dummy_project")?;
+            let root_path = tempdir.path();
+            prepare_dummy_rust_project(root_path, crates)?;
+            cargo_fetch(root_path)?;
+            Ok(())
+        })?;
 
     Ok(())
 }
@@ -185,13 +192,6 @@ fn prepare_dummy_rust_project(
     fs::create_dir(&src_path)?;
     let lib_rs_path = src_path.join("lib.rs");
     File::create(lib_rs_path)?;
-    // Create dummy .cargo/config.toml (for a library project)
-    let cargo_path = root_path.join(".cargo");
-    fs::create_dir(&cargo_path)?;
-    let config_path = cargo_path.join("config.toml");
-    File::create(config_path)?.write_all( b"[build]\nwarnings = allow")?;
-
-   
 
     Ok(())
 }

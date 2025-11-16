@@ -1,4 +1,0 @@
-services:
-  gather:
-    image: gather:latest
-    container_name: gather
