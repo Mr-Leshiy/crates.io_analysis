@@ -10,7 +10,7 @@ use indicatif::ProgressStyle;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use serde::Deserialize;
 use tempdir::TempDir;
-use tracing::Span;
+use tracing::{event, Level, Span};
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 use walkdir::WalkDir;
 
@@ -83,8 +83,12 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
             // updating progress bar
             {
                 let file_name = d.path().file_name().and_then(|v| v.to_str());
-                file_name.inspect(|v| span.pb_set_message(v));
+                file_name.inspect(|v| {
+                    span.pb_set_message(v);
+                    event!(Level::INFO, crate_name = v);
+                });
                 span.pb_inc(1);
+                
             }
 
             read_crate_index_file(d.into_path())
