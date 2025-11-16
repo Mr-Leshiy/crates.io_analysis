@@ -48,11 +48,13 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
     let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
 
     let span = Span::current();
+    anyhow::ensure!(!span.is_disabled());
     span.pb_set_style(&pb_style);
     span.pb_set_length(crates_number.try_into()?);
     span.pb_set_finish_message(&format!(
         "Reading all crates versions from {crates_index:?} completed"
     ));
+    
 
     let mut iter = WalkDir::new(crates_index).sort_by_file_name().into_iter();
     let root = iter
@@ -62,13 +64,13 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
 
     let git = iter
         .next()
-        .ok_or(anyhow::anyhow!("Must have an '.git' entry "))??;
+        .ok_or(anyhow::anyhow!("Must have an '.git' entry"))??;
     anyhow::ensure!(git.path().file_name() == Some(OsStr::new(".git")));
     iter.skip_current_dir();
 
     let github = iter
         .next()
-        .ok_or(anyhow::anyhow!("Must have an '.github' entry "))??;
+        .ok_or(anyhow::anyhow!("Must have an '.github' entry"))??;
     anyhow::ensure!(github.path().file_name() == Some(OsStr::new(".github")));
     iter.skip_current_dir();
 
