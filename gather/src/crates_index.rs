@@ -22,7 +22,7 @@ pub struct CrateVersion {
     pub yanked: bool,
 }
 
-#[tracing::instrument(skip_all, level = "debug")]
+#[tracing::instrument(skip_all)]
 pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateVersion>> {
     fn is_hidden(e: &walkdir::DirEntry) -> bool {
         e.file_name().to_str().is_some_and(|s| s.starts_with('.'))
