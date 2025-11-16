@@ -120,17 +120,28 @@ fn read_crate_index_file(
 /// listing all provided crates as dependencies.
 /// The next step is to invoke `cargo fetch` on the freshly set crate.
 /// By doing this the proper downloading, invoked by the 'cargo' itself.
+#[tracing::instrument]
 pub fn download_all_crates_versions(crates_versions: &[CrateVersion]) -> anyhow::Result<()> {
-    const PACKAGES_CHUNKS_SIZE: usize = 100;
+    const PACKAGES_CHUNKS_SIZE: u64 = 100;
+
+    let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta})")?;
+
+    let span = Span::current();
+    span.pb_set_style(&pb_style);
+    span.pb_set_length(crates_versions.len().try_into()?);
+    span.pb_set_finish_message(&format!(
+        "Downloading crates using 'cargo fetch' completed"
+    ));
+    
 
     crates_versions
-        .chunks(PACKAGES_CHUNKS_SIZE)
-        .par_bridge()
+        .chunks(PACKAGES_CHUNKS_SIZE.try_into()?)
         .try_for_each(|crates| -> anyhow::Result<()> {
             let tempdir = TempDir::new("dummy_project")?;
             let root_path = tempdir.path();
             prepare_dummy_rust_project(root_path, crates)?;
             cargo_fetch(root_path)?;
+            span.pb_inc(PACKAGES_CHUNKS_SIZE);
             Ok(())
         })?;
 
