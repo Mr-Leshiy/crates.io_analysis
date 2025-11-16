@@ -1,7 +1,7 @@
 VERSION 0.8
 
 gather-build:
-    FROM rust:1.91
+    FROM rust:1.91-trixie
 
     RUN apt-get update && \
         apt-get install -y git pkg-config libssl-dev curl build-essential && \
