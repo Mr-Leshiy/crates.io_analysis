@@ -36,8 +36,12 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
         e.path().file_name() == Some(&OsStr::new("config.json"))
     }
 
+    fn is_readme(e: &walkdir::DirEntry) -> bool {
+        e.path().file_name() == Some(&OsStr::new("README.md"))
+    }
+
     fn skip_entry(e: &walkdir::DirEntry) -> bool {
-        !is_hidden(e) && is_file(e) && !is_config_file(e)
+        !is_hidden(e) && is_file(e) && !is_config_file(e) && !is_readme(e)
     }
 
     let crates_number = git2::Repository::open(crates_index)?.index()?.len();
@@ -50,8 +54,25 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
         "Reading all crates versions from {crates_index:?} completed"
     ));
 
-    Ok(WalkDir::new(crates_index)
-        .into_iter()
+    let mut iter = WalkDir::new(crates_index).sort_by_file_name().into_iter();
+    let root = iter
+        .next()
+        .ok_or(anyhow::anyhow!("Must have a root entry"))??;
+    anyhow::ensure!(root.path().file_name() == crates_index.file_name());
+
+    let git = iter
+        .next()
+        .ok_or(anyhow::anyhow!("Must have an '.git' entry "))??;
+    anyhow::ensure!(git.path().file_name() == Some(OsStr::new(".git")));
+    iter.skip_current_dir();
+
+    let github = iter
+        .next()
+        .ok_or(anyhow::anyhow!("Must have an '.github' entry "))??;
+    anyhow::ensure!(github.path().file_name() == Some(OsStr::new(".github")));
+    iter.skip_current_dir();
+
+    Ok(iter
         .par_bridge()
         .filter_map(|e| {
             e.inspect_err(|err| tracing::warn!(?err, "walkdir result is error"))
