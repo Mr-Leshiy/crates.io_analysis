@@ -140,7 +140,7 @@ impl CratesIoApi {
                 .download_and_unpack_crate_to(name.as_str(), version.as_str(), out)
                 .await?;
             // updating progress bar
-            {   
+            {
                 let span = Span::current();
                 span.pb_set_message(&format!("{name}-{version}"));
                 span.pb_inc(1);

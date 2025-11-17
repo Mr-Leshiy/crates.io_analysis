@@ -21,7 +21,10 @@ pub struct CrateVersion {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateVersion>> {
+pub fn get_all_crates_versions(
+    crates_index: &Path,
+    only_latest: bool,
+) -> anyhow::Result<Vec<CrateVersion>> {
     fn is_hidden(e: &walkdir::DirEntry) -> bool {
         e.file_name().to_str().is_some_and(|s| s.starts_with('.'))
     }
@@ -70,33 +73,67 @@ pub fn get_all_crates_versions(crates_index: &Path) -> anyhow::Result<Vec<CrateV
     anyhow::ensure!(github.path().file_name() == Some(OsStr::new(".github")));
     iter.skip_current_dir();
 
-    Ok(iter
+    let iter = iter
         .par_bridge()
         .filter_map(|e| {
             e.inspect_err(|err| tracing::warn!(?err, "walkdir result is error"))
                 .ok()
         })
         .filter(skip_entry)
-        .filter_map(|d| {
+        .inspect(|d|
             // updating progress bar
             {
                 let file_name = d.path().file_name().and_then(|v| v.to_str());
                 file_name.inspect(|v| span.pb_set_message(v));
                 span.pb_inc(1);
-            }
+            });
 
-            read_crate_index_file(d.into_path())
-                .inspect_err(|err| {
-                    tracing::warn!(err = err.to_string(), "Cannot read crate vesions from file")
-                })
-                .ok()
-        })
-        .flatten()
-        .filter(|v| !v.yanked)
-        .collect())
+    if only_latest {
+        Ok(iter
+            .filter_map(|d| {
+                read_latest_version_crate_index_file(d.into_path())
+                    .inspect_err(|err| {
+                        tracing::warn!(err = err.to_string(), "Cannot read crate vesions from file")
+                    })
+                    .ok()
+            })
+            .filter(|v| !v.yanked)
+            .collect())
+    } else {
+        Ok(iter
+            .filter_map(|d| {
+                read_all_versions_crate_index_file(d.into_path())
+                    .inspect_err(|err| {
+                        tracing::warn!(err = err.to_string(), "Cannot read crate vesions from file")
+                    })
+                    .ok()
+            })
+            .flatten()
+            .filter(|v| !v.yanked)
+            .collect())
+    }
 }
 
-fn read_crate_index_file(
+fn read_latest_version_crate_index_file(path: PathBuf) -> anyhow::Result<CrateVersion> {
+    let f = File::open(&path)?;
+    let deser = serde_json::Deserializer::from_reader(f);
+    deser
+        .into_iter::<CrateVersion>()
+        .par_bridge()
+        .filter_map({
+            let path = path.clone();
+            move |line| {
+                line.inspect_err(|err| {
+                tracing::warn!(err = err.to_string(), path=?path, "Cannot deserialize crate vesion")
+            })
+            .ok()
+            }
+        })
+        .max_by_key(|v| v.version.clone())
+        .ok_or(anyhow::anyhow!("Must have at least one latest crate"))
+}
+
+fn read_all_versions_crate_index_file(
     path: PathBuf,
 ) -> anyhow::Result<impl ParallelIterator<Item = CrateVersion>> {
     let f = File::open(&path)?;

@@ -93,7 +93,7 @@ async fn main() -> anyhow::Result<()> {
 
     AnalyzedCrateInfo::write_header(&mut csv_w)?;
 
-    let all_crates = get_all_crates_versions(&cli.crates_index)?;
+    let all_crates = get_all_crates_versions(&cli.crates_index, true)?;
     let all_crates = all_crates
         .into_iter()
         .map(|c| (c.name, c.version.to_string()))
