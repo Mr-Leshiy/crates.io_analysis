@@ -1,5 +1,6 @@
 mod analyze;
 mod crates_index;
+mod crates_io;
 
 use std::{fs::File, num::NonZeroUsize, path::PathBuf, thread};
 
