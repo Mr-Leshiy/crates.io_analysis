@@ -135,14 +135,18 @@ impl CratesIoApi {
         span.pb_set_length(crates.len().try_into()?);
         span.pb_set_finish_message(&format!("Downloading all crates versions from completed"));
 
-        futures::future::join_all(crates.iter().map(|(name, version)| {
+        futures::future::join_all(crates.iter().map(|(name, version)| async move {
+            let res = self
+                .download_and_unpack_crate_to(name.as_str(), version.as_str(), out)
+                .await?;
             // updating progress bar
-            {
+            {   
+                let span = Span::current();
                 span.pb_set_message(&format!("{name}-{version}"));
                 span.pb_inc(1);
             }
 
-            self.download_and_unpack_crate_to(name.as_str(), version.as_str(), out)
+            Ok(res)
         }))
         .await
         .into_iter()
