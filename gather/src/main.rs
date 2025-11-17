@@ -75,8 +75,7 @@ fn setup_tracing(log_level: LogLevel) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::try_parse()?;
 
     setup_tracing(cli.log_level)?;
@@ -93,16 +92,22 @@ async fn main() -> anyhow::Result<()> {
 
     AnalyzedCrateInfo::write_header(&mut csv_w)?;
 
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
     let all_crates = get_all_crates_versions(&cli.crates_index, true)?;
     let all_crates = all_crates
         .into_iter()
         .map(|c| (c.name, c.version.to_string()))
         .collect::<Vec<_>>();
-    let _crates = api
-        .download_and_unpack_crates_to(all_crates.as_slice(), temp.path())
-        .await?;
 
-    Ok(())
+    rt.block_on(async {
+        let _crates = api
+            .download_and_unpack_crates_to(all_crates.as_slice(), temp.path())
+            .await?;
+        Ok(())
+    })
 }
 
 // fn process_crates(crates: &[PathBuf]) -> anyhow::Result<()> {
