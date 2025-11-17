@@ -8,18 +8,18 @@ use std::{
 
 use bytes::Buf;
 use flate2::read::GzDecoder;
-use reqwest::{
-    Client, ClientBuilder,
-};
+use indicatif::ProgressStyle;
+use reqwest::{Client, ClientBuilder};
 use tar::Archive;
 use tokio::sync::Mutex;
 
+use tracing::Span;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 pub use types::{CrateName, CrateVersionInfo, NextPage};
 
 const CRATES_IO_URL: &str = "https://crates.io/api";
 const CRATE_IO_STATIC_DOWNLOAD_URL: &str = "https://static.crates.io/crates";
-const USER_AGENT: &str =
-    "crates.io_analysis (https://github.com/Mr-Leshiy/crates.io_analysis)";
+const USER_AGENT: &str = "crates.io_analysis (https://github.com/Mr-Leshiy/crates.io_analysis)";
 
 pub struct CratesIoApi {
     c: Mutex<Client>,
@@ -121,7 +121,35 @@ impl CratesIoApi {
         anyhow::bail!("Failled to call 'crates.io/v1/crates/{{name}}/versions' endpoint");
     }
 
-    pub async fn download_and_unpack_crate_to(
+    #[tracing::instrument(skip_all)]
+    pub async fn download_and_unpack_crates_to(
+        &self,
+        crates: &[(String, String)],
+        out: &Path,
+    ) -> anyhow::Result<Vec<PathBuf>> {
+        let pb_style =
+            ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
+
+        let span = Span::current();
+        span.pb_set_style(&pb_style);
+        span.pb_set_length(crates.len().try_into()?);
+        span.pb_set_finish_message(&format!("Downloading all crates versions from completed"));
+
+        futures::future::join_all(crates.iter().map(|(name, version)| {
+            // updating progress bar
+            {
+                span.pb_set_message(&format!("{name}-{version}"));
+                span.pb_inc(1);
+            }
+
+            self.download_and_unpack_crate_to(name.as_str(), version.as_str(), out)
+        }))
+        .await
+        .into_iter()
+        .collect::<anyhow::Result<Vec<_>>>()
+    }
+
+    async fn download_and_unpack_crate_to(
         &self,
         name: &str,
         version: &str,
@@ -165,9 +193,11 @@ impl CratesIoApi {
 #[tokio::test]
 async fn download_and_unpack_crate_to_test() {
     use tempdir::TempDir;
-    
+
     let api = CratesIoApi::new().unwrap();
     let temp = TempDir::new("download_and_unpack_crate_to_test").unwrap();
 
-    api.download_and_unpack_crate_to("serde", "1.0.228", temp.path()).await.unwrap();
+    api.download_and_unpack_crate_to("serde", "1.0.228", temp.path())
+        .await
+        .unwrap();
 }

@@ -6,13 +6,14 @@ use std::{fs::File, num::NonZeroUsize, path::PathBuf, thread};
 
 use clap::{Parser, ValueEnum};
 use rayon::ThreadPoolBuilder;
+use tempdir::TempDir;
 use tracing::level_filters::LevelFilter;
 use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    analyze::types::AnalyzedCrateInfo,
-    crates_index::{download_all_crates_versions, get_all_crates_versions},
+    analyze::types::AnalyzedCrateInfo, crates_index::get_all_crates_versions,
+    crates_io::CratesIoApi,
 };
 
 #[derive(Parser, Debug)]
@@ -74,7 +75,8 @@ fn setup_tracing(log_level: LogLevel) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::try_parse()?;
 
     setup_tracing(cli.log_level)?;
@@ -86,10 +88,19 @@ fn main() -> anyhow::Result<()> {
         .num_threads(num_threads)
         .build_global()?;
     let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(cli.out)?);
+    let temp = TempDir::new("crates_io")?;
+    let api = CratesIoApi::new()?;
+
     AnalyzedCrateInfo::write_header(&mut csv_w)?;
 
     let all_crates = get_all_crates_versions(&cli.crates_index)?;
-    download_all_crates_versions(&all_crates)?;
+    let all_crates = all_crates
+        .into_iter()
+        .map(|c| (c.name, c.version.to_string()))
+        .collect::<Vec<_>>();
+    let _crates = api
+        .download_and_unpack_crates_to(all_crates.as_slice(), temp.path())
+        .await?;
 
     Ok(())
 }
