@@ -21,7 +21,7 @@ use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
-    analyze::types::{AdvisoriesResults, AnalyzedCrateInfo, CrateMetaInfo},
+    analyze::types::{AnalyzedCrateInfo, CrateMetaInfo},
     crates_io::CratesIoApi,
 };
 
@@ -74,14 +74,11 @@ async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Option<A
 
     let meta = get_crate_meta(api, &ws).await?;
 
-    // let Some(advisories) = deny::cargo_deny_advisories_check(&ws)? else {
-    //     return Ok(None);
-    // };
-
-    let info = AnalyzedCrateInfo {
-        meta,
-        advisories: AdvisoriesResults::new(),
+    let Some(advisories) = deny::cargo_deny_advisories_check(&ws)? else {
+        return Ok(None);
     };
+
+    let info = AnalyzedCrateInfo { meta, advisories };
     tracing::debug!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
 
     Ok(Some(info))
