@@ -7,7 +7,9 @@ use std::{
 
 use bytes::Buf;
 use flate2::read::GzDecoder;
-use futures::{stream::{FuturesUnordered, StreamExt}, FutureExt};
+use futures::{
+    stream::{Collect, FuturesOrdered, FuturesUnordered, StreamExt}, FutureExt
+};
 use indicatif::ProgressStyle;
 use reqwest::{Client, ClientBuilder};
 use tar::Archive;
@@ -73,6 +75,7 @@ impl CratesIoApi {
         span.pb_set_length(crates.len().try_into()?);
         span.pb_set_finish_message(&format!("Downloading and unpacking all crates completed"));
 
+
         futures::future::join_all(crates.iter().map(|(name, version)| async move {
             let res = self
                 .download_and_unpack_crate_to(name.as_str(), version.as_str(), out)
@@ -83,7 +86,6 @@ impl CratesIoApi {
                 span.pb_set_message(&format!("{name}-{version}"));
                 span.pb_inc(1);
             }
-
             Ok(res)
         }))
         .await
@@ -127,13 +129,6 @@ impl CratesIoApi {
         let mut archive = Archive::new(gz);
 
         archive.unpack(out)?;
-
-        // updating progress bar
-        {
-            let span = Span::current();
-            span.pb_set_message(&format!("{name}-{version}"));
-            span.pb_inc(1);
-        }
 
         Ok(out.join(format!("{name}-{version}")).to_path_buf())
     }

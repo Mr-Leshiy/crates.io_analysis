@@ -12,7 +12,7 @@ use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    analyze::types::AnalyzedCrateInfo, crates_index::get_all_crates_versions,
+    analyze::{analyze_and_record_crates, types::AnalyzedCrateInfo}, crates_index::get_all_crates_versions,
     crates_io::CratesIoApi,
 };
 
@@ -103,9 +103,10 @@ fn main() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     rt.block_on(async {
-        let _crates = api
+        let crates = api
             .download_and_unpack_crates_to(all_crates.as_slice(), temp.path())
             .await?;
+        analyze_and_record_crates(&api, &crates, &mut csv_w).await?;
         Ok(())
     })
 }
