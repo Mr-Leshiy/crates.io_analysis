@@ -33,11 +33,11 @@ pub fn get_all_crates_versions(
     }
 
     fn is_config_file(e: &walkdir::DirEntry) -> bool {
-        e.path().file_name() == Some(&OsStr::new("config.json"))
+        e.path().file_name() == Some(OsStr::new("config.json"))
     }
 
     fn is_readme(e: &walkdir::DirEntry) -> bool {
-        e.path().file_name() == Some(&OsStr::new("README.md"))
+        e.path().file_name() == Some(OsStr::new("README.md"))
     }
 
     fn skip_entry(e: &walkdir::DirEntry) -> bool {

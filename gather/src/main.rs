@@ -114,9 +114,9 @@ fn main() -> anyhow::Result<()> {
         let api = CratesIoApi::new()?;
 
         let crates = api
-            .download_and_unpack_crates_to(all_crates.as_slice(), temp.path(), num_threads)
+            .download_and_unpack_crates_to(all_crates.as_slice(), temp.path())
             .await?;
-        let crates_info = analyze_all(&api, &crates, num_threads).await?;
+        let crates_info = analyze_all(&api, &crates).await?;
 
         write_to_csv(&cli.out, &crates_info)?;
         Ok(())
@@ -127,7 +127,7 @@ fn main() -> anyhow::Result<()> {
 fn write_to_csv(out: &Path, crates: &[AnalyzedCrateInfo]) -> anyhow::Result<()> {
     let span = Span::current();
     span.pb_set_length(crates.len().try_into()?);
-    span.pb_set_finish_message(&format!("Writing into csv completed"));
+    span.pb_set_finish_message("Writing into csv completed");
 
     let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(out)?);
     AnalyzedCrateInfo::write_header(&mut csv_w)?;

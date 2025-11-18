@@ -16,7 +16,7 @@ use cargo::{
     },
     ops::resolve_ws_with_opts,
 };
-use futures::StreamExt;
+use futures::{TryStreamExt, stream::FuturesUnordered};
 use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
@@ -29,31 +29,31 @@ use crate::{
 pub async fn analyze_all(
     api: &CratesIoApi,
     crates_dirs: &[PathBuf],
-    num_threads: usize,
 ) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
     let span: Span = Span::current();
     span.pb_set_length(crates_dirs.len().try_into()?);
-    span.pb_set_finish_message(&format!("Analyzing all crates completed"));
+    span.pb_set_finish_message("Analyzing all crates completed");
 
-    let iter = crates_dirs.iter().map(|crate_dir| async move {
-        let span = Span::current();
+    let iter = crates_dirs
+        .iter()
+        .map(async move |crate_dir| -> anyhow::Result<_> {
+            let span = Span::current();
 
-        let res = analyze(api, crate_dir)
-            .await?
-            .inspect(|res| span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version)));
+            let res = analyze(api, crate_dir).await?.inspect(|res| {
+                span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version))
+            });
 
-        span.pb_inc(1);
-        Ok(res)
-    });
+            span.pb_inc(1);
+            Ok(res)
+        });
 
-    let res: Vec<anyhow::Result<_>> = futures::stream::iter(iter)
-        .buffer_unordered(num_threads)
-        .collect()
-        .await;
-    Ok(res
+    let res: Vec<Option<_>> = iter
         .into_iter()
-        .filter_map(|v| v.transpose())
-        .collect::<anyhow::Result<Vec<_>>>()?)
+        .collect::<FuturesUnordered<_>>()
+        .try_collect()
+        .await?;
+
+    Ok(res.into_iter().flatten().collect())
 }
 
 async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Option<AnalyzedCrateInfo>> {

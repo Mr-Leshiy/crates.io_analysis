@@ -63,11 +63,10 @@ impl CratesIoApi {
         &self,
         crates: &[(String, String)],
         out: &Path,
-        num_threads: usize,
     ) -> anyhow::Result<Vec<PathBuf>> {
         let span = Span::current();
         span.pb_set_length(crates.len().try_into()?);
-        span.pb_set_finish_message(&format!("Downloading and unpacking all crates completed"));
+        span.pb_set_finish_message("Downloading and unpacking all crates completed");
 
         let iter = crates.iter().map(|(name, version)| async move {
             let res = self
