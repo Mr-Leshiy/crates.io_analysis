@@ -7,10 +7,7 @@ use std::{
 
 use bytes::Buf;
 use flate2::read::GzDecoder;
-use futures::{
-    FutureExt, TryStreamExt,
-    stream::{Collect, FuturesOrdered, FuturesUnordered, StreamExt},
-};
+use futures::stream::StreamExt;
 use indicatif::ProgressStyle;
 use reqwest::{Client, ClientBuilder};
 use tar::Archive;

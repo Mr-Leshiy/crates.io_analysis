@@ -2,17 +2,25 @@ mod analyze;
 mod crates_index;
 mod crates_io;
 
-use std::{fs::File, num::NonZeroUsize, path::PathBuf, thread};
+use std::{
+    fs::File,
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    thread,
+};
 
 use clap::{Parser, ValueEnum};
-use rayon::ThreadPoolBuilder;
+use indicatif::ProgressStyle;
+use rayon::{
+    ThreadPoolBuilder,
+};
 use tempdir::TempDir;
-use tracing::level_filters::LevelFilter;
-use tracing_indicatif::IndicatifLayer;
+use tracing::{Span, level_filters::LevelFilter};
+use tracing_indicatif::{IndicatifLayer, span_ext::IndicatifSpanExt};
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    analyze::{analyze_and_record_crates, types::AnalyzedCrateInfo},
+    analyze::{analyze_all, types::AnalyzedCrateInfo},
     crates_index::get_all_crates_versions,
     crates_io::CratesIoApi,
 };
@@ -87,15 +95,7 @@ fn main() -> anyhow::Result<()> {
     ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build_global()?;
-    let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(cli.out)?);
-    let temp = TempDir::new("crates_io")?;
-    let api = CratesIoApi::new()?;
 
-    AnalyzedCrateInfo::write_header(&mut csv_w)?;
-
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
 
     let all_crates = get_all_crates_versions(&cli.crates_index, true)?;
     let all_crates = all_crates
@@ -103,13 +103,42 @@ fn main() -> anyhow::Result<()> {
         .map(|c| (c.name, c.version.to_string()))
         .collect::<Vec<_>>();
 
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
     rt.block_on(async {
+        let temp = TempDir::new("crates_io")?;
+        let api = CratesIoApi::new()?;
+
         let crates = api
             .download_and_unpack_crates_to(all_crates.as_slice(), temp.path(), num_threads)
             .await?;
-        analyze_and_record_crates(&api, &crates, &mut csv_w).await?;
+        let crates_info = analyze_all(&api, &crates, num_threads).await?;
+
+        write_to_csv(&cli.out, &crates_info)?;
         Ok(())
     })
+}
+
+#[tracing::instrument(skip_all)]
+fn write_to_csv(out: &Path, crates: &[AnalyzedCrateInfo]) -> anyhow::Result<()> {
+    let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta})")?;
+
+    let span = Span::current();
+    span.pb_set_style(&pb_style);
+    span.pb_set_length(crates.len().try_into()?);
+    span.pb_set_finish_message(&format!("Writing into csv completed"));
+
+    let mut csv_w = csv::WriterBuilder::new().from_writer(File::create(out)?);
+    AnalyzedCrateInfo::write_header(&mut csv_w)?;
+
+    for c in crates {
+        c.write_record(&mut csv_w)?;
+        span.pb_inc(1);
+    }
+
+    Ok(())
 }
 
 // fn process_crates(crates: &[PathBuf]) -> anyhow::Result<()> {

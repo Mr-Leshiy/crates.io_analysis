@@ -16,6 +16,7 @@ use cargo::{
     },
     ops::resolve_ws_with_opts,
 };
+use futures::StreamExt;
 use indicatif::ProgressStyle;
 use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
@@ -26,11 +27,11 @@ use crate::{
 };
 
 #[tracing::instrument(skip_all)]
-pub async fn analyze_and_record_crates<W: std::io::Write>(
+pub async fn analyze_all(
     api: &CratesIoApi,
     crates_dirs: &[PathBuf],
-    csv_w: &mut csv::Writer<W>,
-) -> anyhow::Result<()> {
+    num_threads: usize,
+) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
     let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
 
     let span: Span = Span::current();
@@ -38,18 +39,24 @@ pub async fn analyze_and_record_crates<W: std::io::Write>(
     span.pb_set_length(crates_dirs.len().try_into()?);
     span.pb_set_finish_message(&format!("Analyzing all crates completed"));
 
-    for crate_dir in crates_dirs {
+    let iter = crates_dirs.iter().map(|crate_dir| async move {
         let span = Span::current();
 
-        if let Some(res) = analyze(api, crate_dir).await? {
-            res.write_record(csv_w)?;
-            span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version));
-        }
-
+        let res = analyze(api, crate_dir)
+            .await?
+            .inspect(|res| span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version)));
         span.pb_inc(1);
-    }
+        Ok(res)
+    });
 
-    Ok(())
+    let res: Vec<anyhow::Result<_>> = futures::stream::iter(iter)
+        .buffer_unordered(num_threads)
+        .collect()
+        .await;
+    Ok(res
+        .into_iter()
+        .filter_map(|v| v.transpose())
+        .collect::<anyhow::Result<Vec<_>>>()?)
 }
 
 async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Option<AnalyzedCrateInfo>> {
