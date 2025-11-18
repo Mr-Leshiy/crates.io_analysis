@@ -8,7 +8,8 @@ use std::{
 use bytes::Buf;
 use flate2::read::GzDecoder;
 use futures::{
-    stream::{Collect, FuturesOrdered, FuturesUnordered, StreamExt}, FutureExt
+    FutureExt, TryStreamExt,
+    stream::{Collect, FuturesOrdered, FuturesUnordered, StreamExt},
 };
 use indicatif::ProgressStyle;
 use reqwest::{Client, ClientBuilder};
@@ -66,6 +67,7 @@ impl CratesIoApi {
         &self,
         crates: &[(String, String)],
         out: &Path,
+        num_threads: usize,
     ) -> anyhow::Result<Vec<PathBuf>> {
         let pb_style =
             ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
@@ -75,8 +77,7 @@ impl CratesIoApi {
         span.pb_set_length(crates.len().try_into()?);
         span.pb_set_finish_message(&format!("Downloading and unpacking all crates completed"));
 
-
-        futures::future::join_all(crates.iter().map(|(name, version)| async move {
+        let iter = crates.iter().map(|(name, version)| async move {
             let res = self
                 .download_and_unpack_crate_to(name.as_str(), version.as_str(), out)
                 .await?;
@@ -87,10 +88,12 @@ impl CratesIoApi {
                 span.pb_inc(1);
             }
             Ok(res)
-        }))
-        .await
-        .into_iter()
-        .collect::<anyhow::Result<Vec<_>>>()
+        });
+        let res: Vec<anyhow::Result<PathBuf>> = futures::stream::iter(iter)
+            .buffer_unordered(num_threads)
+            .collect()
+            .await;
+        Ok(res.into_iter().collect::<anyhow::Result<_>>()?)
     }
 
     async fn download_and_unpack_crate_to(
