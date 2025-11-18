@@ -74,6 +74,7 @@ pub fn get_all_crates_versions(
     iter.skip_current_dir();
 
     let iter = iter
+        .take(1000)
         .par_bridge()
         .filter_map(|e| {
             e.inspect_err(|err| tracing::warn!(?err, "walkdir result is error"))
