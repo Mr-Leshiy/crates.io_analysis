@@ -4,7 +4,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use indicatif::ProgressStyle;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use semver::Version;
 use serde::Deserialize;
@@ -46,10 +45,8 @@ pub fn get_all_crates_versions(
     }
 
     let crates_number = git2::Repository::open(crates_index)?.index()?.len();
-    let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
 
     let span = Span::current();
-    span.pb_set_style(&pb_style);
     span.pb_set_length(crates_number.try_into()?);
     span.pb_set_finish_message(&format!(
         "Reading all crates versions from {crates_index:?} completed"
@@ -74,7 +71,7 @@ pub fn get_all_crates_versions(
     iter.skip_current_dir();
 
     let iter = iter
-        .take(1000)
+        .take(4)
         .par_bridge()
         .filter_map(|e| {
             e.inspect_err(|err| tracing::warn!(?err, "walkdir result is error"))

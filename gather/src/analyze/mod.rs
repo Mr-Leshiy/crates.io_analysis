@@ -17,7 +17,6 @@ use cargo::{
     ops::resolve_ws_with_opts,
 };
 use futures::StreamExt;
-use indicatif::ProgressStyle;
 use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
@@ -32,10 +31,7 @@ pub async fn analyze_all(
     crates_dirs: &[PathBuf],
     num_threads: usize,
 ) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
-    let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
-
     let span: Span = Span::current();
-    span.pb_set_style(&pb_style);
     span.pb_set_length(crates_dirs.len().try_into()?);
     span.pb_set_finish_message(&format!("Analyzing all crates completed"));
 
@@ -45,6 +41,7 @@ pub async fn analyze_all(
         let res = analyze(api, crate_dir)
             .await?
             .inspect(|res| span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version)));
+
         span.pb_inc(1);
         Ok(res)
     });
@@ -60,6 +57,8 @@ pub async fn analyze_all(
 }
 
 async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Option<AnalyzedCrateInfo>> {
+    let _disable_stderr = gag::Gag::stderr();
+
     tracing::debug!(
         crate_dir = ?crate_dir,
         "Analyzing crate..."

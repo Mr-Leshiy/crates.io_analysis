@@ -8,7 +8,6 @@ use std::{
 use bytes::Buf;
 use flate2::read::GzDecoder;
 use futures::stream::StreamExt;
-use indicatif::ProgressStyle;
 use reqwest::{Client, ClientBuilder};
 use tar::Archive;
 use tokio::sync::Mutex;
@@ -66,11 +65,7 @@ impl CratesIoApi {
         out: &Path,
         num_threads: usize,
     ) -> anyhow::Result<Vec<PathBuf>> {
-        let pb_style =
-            ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
-
         let span = Span::current();
-        span.pb_set_style(&pb_style);
         span.pb_set_length(crates.len().try_into()?);
         span.pb_set_finish_message(&format!("Downloading and unpacking all crates completed"));
 
