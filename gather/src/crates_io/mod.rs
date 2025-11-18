@@ -1,7 +1,6 @@
 mod types;
 
 use std::{
-    ops::Not,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -15,7 +14,7 @@ use tokio::sync::Mutex;
 
 use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
-pub use types::{CrateName, CrateVersionInfo, NextPage};
+pub use types::CrateStats;
 
 const CRATES_IO_URL: &str = "https://crates.io/api";
 const CRATE_IO_STATIC_DOWNLOAD_URL: &str = "https://static.crates.io/crates";
@@ -39,86 +38,24 @@ impl CratesIoApi {
         Ok(())
     }
 
-    pub async fn get_crates_names(
-        &self,
-        per_page: u8,
-        next_page: NextPage,
-    ) -> anyhow::Result<(Vec<CrateName>, NextPage)> {
-        let args = if let Some(next_page) = next_page {
-            format!("?sort=new&include_yanked=no&per_page={per_page}&{next_page}")
-        } else {
-            format!("?sort=new&include_yanked=no&per_page={per_page}")
-        };
-
+    pub async fn get_crate_stats(&self, name: &str, version: &str) -> anyhow::Result<CrateStats> {
         for attempt in 1..11 {
             let resp = {
                 let c = self.c.lock().await;
-                c.get(format!("{CRATES_IO_URL}/v1/crates{args}"))
-                    .header(USER_AGENT, USER_AGENT)
-                    .send()
-                    .await?
-            };
-
-            if !resp.status().is_success() {
-                tracing::error!(status_code = ?resp.status(), attempt=attempt,  "Failled to call 'crates.io/v1/crates' endpoint. Retrying...");
-                self.reset().await?;
-                continue;
-            }
-
-            let resp = serde_json::from_slice::<types::CratesResp>(&resp.bytes().await?)?;
-            let next_page = resp.meta.next_page.and_then(|v| {
-                v.split("&").find_map(|pair| {
-                    pair.find("seek=")?;
-                    Some(pair.to_string())
-                })
-            });
-            tracing::debug!(
-                next_page = next_page,
-                total_crates_amount = resp.meta.total,
-                "Successfully get crate names info"
-            );
-            return Ok((
-                resp.crates
-                    .into_iter()
-                    .filter_map(|v| v.yanked.not().then_some(v.name))
-                    .collect(),
-                next_page,
-            ));
-        }
-        anyhow::bail!("Failled to call 'crates.io/v1/crates' endpoint");
-    }
-
-    pub async fn get_crate_versions(
-        &self,
-        name: &CrateName,
-    ) -> anyhow::Result<Vec<CrateVersionInfo>> {
-        for attempt in 1..11 {
-            let resp = {
-                let c = self.c.lock().await;
-                c.get(format!("{CRATES_IO_URL}/v1/crates/{name}/versions"))
-                    .header(USER_AGENT, USER_AGENT)
+                c.get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
                     .send()
                     .await?
             };
             if !resp.status().is_success() {
-                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/versions' endpoint. Retrying...");
+                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
                 self.reset().await?;
                 continue;
             }
 
-            let resp = serde_json::from_slice::<types::CrateVersionsResp>(&resp.bytes().await?)?;
-            tracing::debug!(
-                versions_count = resp.versions.len(),
-                crate_name = name,
-                "Successfully get crate versions info."
-            );
-            return Ok(resp
-                .versions
-                .into_iter()
-                .filter_map(|v| v.yanked.not().then_some(v))
-                .collect());
+            let resp = serde_json::from_slice::<types::CrateStatsResp>(&resp.bytes().await?)?;
+            return Ok(resp.version);
         }
-        anyhow::bail!("Failled to call 'crates.io/v1/crates/{{name}}/versions' endpoint");
+        anyhow::bail!("Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint");
     }
 
     #[tracing::instrument(skip_all)]
@@ -133,7 +70,7 @@ impl CratesIoApi {
         let span = Span::current();
         span.pb_set_style(&pb_style);
         span.pb_set_length(crates.len().try_into()?);
-        span.pb_set_finish_message(&format!("Downloading all crates versions from completed"));
+        span.pb_set_finish_message(&format!("Downloading and unpacking all crates completed"));
 
         futures::future::join_all(crates.iter().map(|(name, version)| async move {
             let res = self

@@ -3,19 +3,20 @@ use std::{collections::BTreeMap, ops::AddAssign};
 use cargo_deny::advisories;
 use strum::IntoEnumIterator;
 
+#[derive(Debug, Clone)]
 pub struct AnalyzedCrateInfo {
+    pub meta: CrateMetaInfo,
+    pub advisories: AdvisoriesResults,
+}
+
+#[derive(Debug, Clone)]
+pub struct CrateMetaInfo {
     pub name: String,
     pub version: String,
     pub downloads: u32,
     pub created_at: String,
-    pub info: CrateInfo,
-}
-
-#[derive(Debug, Clone)]
-pub struct CrateInfo {
     pub direct_deps: usize,
     pub all_deps: usize,
-    pub advisories: AdvisoriesResults,
 }
 
 #[derive(Debug, Clone)]
@@ -45,14 +46,14 @@ impl AnalyzedCrateInfo {
         &self,
         csv_w: &mut csv::Writer<W>,
     ) -> anyhow::Result<()> {
-        csv_w.write_field(&self.name)?;
-        csv_w.write_field(&self.version)?;
-        csv_w.write_field(self.downloads.to_string())?;
-        csv_w.write_field(&self.created_at)?;
-        csv_w.write_field(self.info.direct_deps.to_string())?;
-        csv_w.write_field(self.info.all_deps.to_string())?;
+        csv_w.write_field(&self.meta.name)?;
+        csv_w.write_field(&self.meta.version)?;
+        csv_w.write_field(self.meta.downloads.to_string())?;
+        csv_w.write_field(&self.meta.created_at)?;
+        csv_w.write_field(self.meta.direct_deps.to_string())?;
+        csv_w.write_field(self.meta.all_deps.to_string())?;
 
-        for fails in self.info.advisories.0.values() {
+        for fails in self.advisories.0.values() {
             csv_w.write_field(fails.to_string())?;
         }
 

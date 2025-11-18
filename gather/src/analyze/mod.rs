@@ -1,7 +1,10 @@
 mod deny;
 pub mod types;
 
-use std::{collections::HashMap, fs::File, path::Path, sync::LazyLock};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use cargo::{
     GlobalContext,
@@ -13,37 +16,43 @@ use cargo::{
     },
     ops::resolve_ws_with_opts,
 };
-use cargo_deny::{
-    CheckCtx, Spanned, UnvalidatedConfig,
-    advisories::{self, cfg::Config},
-    diag::{DiagnosticCode, DiagnosticOverrides, ErrorSink, Files, KrateSpans, Severity},
-    utf8path,
+use indicatif::ProgressStyle;
+use tracing::Span;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
+
+use crate::{
+    analyze::types::{AdvisoriesResults, AnalyzedCrateInfo, CrateMetaInfo},
+    crates_io::CratesIoApi,
 };
-use krates::{NoneFilter, Utf8PathBuf};
 
-use flate2::read::GzDecoder;
-use tar::Archive;
+#[tracing::instrument(skip_all)]
+pub async fn analyze_and_record_crates<W: std::io::Write>(
+    api: &CratesIoApi,
+    crates_dirs: &[PathBuf],
+    csv_w: &mut csv::Writer<W>,
+) -> anyhow::Result<()> {
+    let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
 
-use crate::analyze::types::CrateInfo;
+    let span: Span = Span::current();
+    span.pb_set_style(&pb_style);
+    span.pb_set_length(crates_dirs.len().try_into()?);
+    span.pb_set_finish_message(&format!("Analyzing all crates completed"));
 
-pub fn unpack(path: &Path) -> anyhow::Result<()> {
-    tracing::debug!(
-        path = ?path,
-        "Unpacking crate..."
-    );
+    for crate_dir in crates_dirs {
+        let span = Span::current();
 
-    let crate_file = File::open(path)?;
-    let gz = GzDecoder::new(crate_file);
-    let mut archive = Archive::new(gz);
+        if let Some(res) = analyze(api, crate_dir).await? {
+            res.write_record(csv_w)?;
+            span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version));
+        }
 
-    let out = path.parent().ok_or(anyhow::anyhow!(
-        "Provided crate archive must have a parent directory"
-    ))?;
-    archive.unpack(out)?;
+        span.pb_inc(1);
+    }
+
     Ok(())
 }
 
-pub async fn analyze(crate_dir: &Path) -> anyhow::Result<Option<CrateInfo>> {
+async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Option<AnalyzedCrateInfo>> {
     tracing::debug!(
         crate_dir = ?crate_dir,
         "Analyzing crate..."
@@ -57,22 +66,22 @@ pub async fn analyze(crate_dir: &Path) -> anyhow::Result<Option<CrateInfo>> {
     let ctx = GlobalContext::default()?;
     let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &ctx)?;
 
-    let (direct_deps, all_deps) = get_crate_deps_count(&ws)?;
-    let Some(advisories) = deny::cargo_deny_advisories_check(&ws)? else {
-        return Ok(None);
-    };
+    let meta = get_crate_meta(api, &ws).await?;
 
-    let info = CrateInfo {
-        direct_deps,
-        all_deps,
-        advisories,
+    // let Some(advisories) = deny::cargo_deny_advisories_check(&ws)? else {
+    //     return Ok(None);
+    // };
+
+    let info = AnalyzedCrateInfo {
+        meta,
+        advisories: AdvisoriesResults::new(),
     };
     tracing::debug!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
 
     Ok(Some(info))
 }
 
-fn get_crate_deps_count(ws: &Workspace) -> anyhow::Result<(usize, usize)> {
+async fn get_crate_meta(api: &CratesIoApi, ws: &Workspace<'_>) -> anyhow::Result<CrateMetaInfo> {
     let &[member] = ws.members().collect::<Vec<_>>().as_slice() else {
         anyhow::bail!("Analyzed workspace must have only one member");
     };
@@ -113,5 +122,17 @@ fn get_crate_deps_count(ws: &Workspace) -> anyhow::Result<(usize, usize)> {
     // the rest of the items are ALL dependencies of the crate
     let all_deps = package_map.len();
 
-    Ok((direct_deps, all_deps))
+    let name = member.name().to_string();
+    let version = member.version().to_string();
+
+    let stats = api.get_crate_stats(&name, &version).await?;
+
+    Ok(CrateMetaInfo {
+        name,
+        version,
+        downloads: stats.downloads,
+        created_at: stats.created_at,
+        direct_deps,
+        all_deps,
+    })
 }
