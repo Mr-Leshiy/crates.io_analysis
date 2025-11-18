@@ -7,7 +7,7 @@ use std::{
 
 use bytes::Buf;
 use flate2::read::GzDecoder;
-use futures::stream::StreamExt;
+use futures::{TryStreamExt, stream::FuturesUnordered};
 use reqwest::{Client, ClientBuilder};
 use tar::Archive;
 use tokio::sync::Mutex;
@@ -81,11 +81,11 @@ impl CratesIoApi {
             }
             Ok(res)
         });
-        let res: Vec<anyhow::Result<PathBuf>> = futures::stream::iter(iter)
-            .buffer_unordered(num_threads)
-            .collect()
-            .await;
-        Ok(res.into_iter().collect::<anyhow::Result<_>>()?)
+
+        iter.into_iter()
+            .collect::<FuturesUnordered<_>>()
+            .try_collect()
+            .await
     }
 
     async fn download_and_unpack_crate_to(

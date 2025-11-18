@@ -72,12 +72,12 @@ fn setup_tracing(log_level: LogLevel) -> anyhow::Result<()> {
     let indicatif_layer = IndicatifLayer::new()
         .with_progress_style(pb_style)
         .with_filter(filter.clone());
-   
+
     let log_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
         .without_time()
         .with_writer(std::io::stdout)
-         .with_writer(indicatif_layer.inner().get_stdout_writer())
+        .with_writer(indicatif_layer.inner().get_stdout_writer())
         .with_filter(filter);
 
     tracing_subscriber::registry()
