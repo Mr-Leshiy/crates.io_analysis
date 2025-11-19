@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use bytes::Buf;
+use bytes::{Buf, Bytes};
 use flate2::read::GzDecoder;
 use futures::{TryStreamExt, stream::FuturesUnordered};
 use reqwest::{Client, ClientBuilder};
@@ -98,32 +98,45 @@ impl CratesIoApi {
             crate_version = version,
             "Downloading crate..."
         );
-        let resp = {
-            let c = self.c.lock().await;
-            c.get(format!(
-                "{CRATE_IO_STATIC_DOWNLOAD_URL}/{name}/{name}-{version}.crate"
-            ))
-            .send()
-            .await?
-        };
-
-        anyhow::ensure!(
-            resp.status().is_success(),
-            "Failed to download {name}-{version}, {resp:?}",
-        );
-
+        let bytes = self.download_crate(name, version).await?;
         tracing::debug!(
             crate_name = name,
             crate_version = version,
             "Unpacking crate..."
         );
+        Self::unpack_crate_to(name, version, bytes, out)
+    }
 
-        let bytes = resp.bytes().await?;
+    async fn download_crate(&self, name: &str, version: &str) -> anyhow::Result<Bytes> {
+        for attempt in 1..11 {
+            let resp = {
+                let c = self.c.lock().await;
+                c.get(format!(
+                    "{CRATE_IO_STATIC_DOWNLOAD_URL}/{name}/{name}-{version}.crate"
+                ))
+                .send()
+                .await?
+            };
+
+            if !resp.status().is_success() {
+                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
+                self.reset().await?;
+                continue;
+            }
+            return Ok(resp.bytes().await?);
+        }
+        anyhow::bail!("Failled to download crate {name}-{version}");
+    }
+
+    fn unpack_crate_to(
+        name: &str,
+        version: &str,
+        bytes: bytes::Bytes,
+        out: &Path,
+    ) -> anyhow::Result<PathBuf> {
         let gz: GzDecoder<bytes::buf::Reader<bytes::Bytes>> = GzDecoder::new(bytes.reader());
         let mut archive = Archive::new(gz);
-
         archive.unpack(out)?;
-
         Ok(out.join(format!("{name}-{version}")).to_path_buf())
     }
 }
