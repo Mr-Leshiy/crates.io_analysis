@@ -4,9 +4,23 @@ This project is focused on analyzing Rust packages from [`crates.io`](https://cr
 The analysis is driven by the [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny) tool, which provides automated auditing capabilities for Rust dependencies.
 
 ## Build and run gathering tool
+
+### Build
+
 ```shell
-docker build -t gather:latest .
-docker run --detach --name gather gather:latest
+earthly +gather-build
+```
+
+### Run
+
+```shell
+docker run -ti --name gather gather:latest /bin/bash
+./target/release/gather --crates-index /crates_index
+```
+
+### Copy
+
+```shell
 docker cp gather:app/crates_info.csv .
 ```
 

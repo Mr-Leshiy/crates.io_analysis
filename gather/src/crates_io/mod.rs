@@ -1,0 +1,168 @@
+mod types;
+
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
+
+use bytes::{Buf, Bytes};
+use flate2::read::GzDecoder;
+use futures::{StreamExt, stream::FuturesUnordered};
+use reqwest::{Client, ClientBuilder};
+use tar::Archive;
+use tokio::sync::Mutex;
+
+use tracing::Span;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
+pub use types::CrateStats;
+
+const CRATES_IO_URL: &str = "https://crates.io/api";
+const CRATE_IO_STATIC_DOWNLOAD_URL: &str = "https://static.crates.io/crates";
+const USER_AGENT: &str = "crates.io_analysis (https://github.com/Mr-Leshiy/crates.io_analysis)";
+
+pub struct CratesIoApi {
+    c: Mutex<Client>,
+}
+
+impl CratesIoApi {
+    pub fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            c: Mutex::new(ClientBuilder::new().user_agent(USER_AGENT).build()?),
+        })
+    }
+
+    pub async fn reset(&self) -> anyhow::Result<()> {
+        let mut c = self.c.lock().await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        *c = ClientBuilder::new().build()?;
+        Ok(())
+    }
+
+    pub async fn get_crate_stats(&self, name: &str, version: &str) -> anyhow::Result<CrateStats> {
+        for attempt in 1..11 {
+            let resp = {
+                let c = self.c.lock().await;
+                c.get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
+                    .send()
+                    .await?
+            };
+            if !resp.status().is_success() {
+                tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
+                self.reset().await?;
+                continue;
+            }
+
+            let resp = serde_json::from_slice::<types::CrateStatsResp>(&resp.bytes().await?)?;
+            return Ok(resp.version);
+        }
+        anyhow::bail!("Failled to call 'crates.io/v1/crates/{name}/{version}' endpoint");
+    }
+
+    #[tracing::instrument(skip_all)]
+    pub async fn download_and_unpack_crates_to(
+        &self,
+        crates: &[(String, String)],
+        out: &Path,
+    ) -> anyhow::Result<Vec<PathBuf>> {
+        let span = Span::current();
+        span.pb_set_length(crates.len().try_into()?);
+        span.pb_set_finish_message("Downloading and unpacking all crates completed");
+
+        let iter = crates.iter().map(|(name, version)| async move {
+            let res = self
+                .download_and_unpack_crate_to(name.as_str(), version.as_str(), out)
+                .await?;
+            // updating progress bar
+            {
+                let span = Span::current();
+                span.pb_set_message(&format!("{name}-{version}"));
+                span.pb_inc(1);
+            }
+            Ok(res)
+        });
+
+        let res: Vec<anyhow::Result<_>> = iter
+            .into_iter()
+            .collect::<FuturesUnordered<_>>()
+            .collect()
+            .await;
+
+        Ok(res
+            .into_iter()
+            .inspect(|v| {
+                if let Err(err) = v {
+                    tracing::error!(
+                        error = err.to_string(),
+                        "Failing to download and and unpack crate"
+                    )
+                }
+            })
+            .flatten()
+            .collect())
+    }
+
+    async fn download_and_unpack_crate_to(
+        &self,
+        name: &str,
+        version: &str,
+        out: &Path,
+    ) -> anyhow::Result<PathBuf> {
+        tracing::debug!(
+            crate_name = name,
+            crate_version = version,
+            "Downloading crate..."
+        );
+        let bytes = self.download_crate(name, version).await?;
+        tracing::debug!(
+            crate_name = name,
+            crate_version = version,
+            "Unpacking crate..."
+        );
+        Self::unpack_crate_to(name, version, bytes, out)
+    }
+
+    async fn download_crate(&self, name: &str, version: &str) -> anyhow::Result<Bytes> {
+        for attempt in 1..11 {
+            let resp = {
+                let c = self.c.lock().await;
+                c.get(format!(
+                    "{CRATE_IO_STATIC_DOWNLOAD_URL}/{name}/{name}-{version}.crate"
+                ))
+                .send()
+                .await?
+            };
+
+            if !resp.status().is_success() {
+                tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
+                self.reset().await?;
+                continue;
+            }
+            return Ok(resp.bytes().await?);
+        }
+        anyhow::bail!("Failled to download crate {name}-{version}");
+    }
+
+    fn unpack_crate_to(
+        name: &str,
+        version: &str,
+        bytes: bytes::Bytes,
+        out: &Path,
+    ) -> anyhow::Result<PathBuf> {
+        let gz: GzDecoder<bytes::buf::Reader<bytes::Bytes>> = GzDecoder::new(bytes.reader());
+        let mut archive = Archive::new(gz);
+        archive.unpack(out)?;
+        Ok(out.join(format!("{name}-{version}")).to_path_buf())
+    }
+}
+
+#[tokio::test]
+async fn download_and_unpack_crate_to_test() {
+    use tempdir::TempDir;
+
+    let api = CratesIoApi::new().unwrap();
+    let temp = TempDir::new("download_and_unpack_crate_to_test").unwrap();
+
+    api.download_and_unpack_crate_to("serde", "1.0.228", temp.path())
+        .await
+        .unwrap();
+}
