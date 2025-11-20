@@ -16,7 +16,7 @@ use cargo::{
     },
     ops::resolve_ws_with_opts,
 };
-use futures::{TryStreamExt, stream::FuturesUnordered};
+use futures::{StreamExt, stream::FuturesUnordered};
 use tracing::Span;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
@@ -37,26 +37,35 @@ pub async fn analyze_all(
     let iter = crates_dirs
         .iter()
         .map(async move |crate_dir| -> anyhow::Result<_> {
-            let span = Span::current();
+            let res = analyze(api, crate_dir).await?;
 
-            let res = analyze(api, crate_dir).await?.inspect(|res| {
-                span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version))
-            });
+            {
+                let span = Span::current();
+                span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version));
+                span.pb_inc(1);
+            }
 
-            span.pb_inc(1);
             Ok(res)
         });
 
-    let res: Vec<Option<_>> = iter
+    let res: Vec<anyhow::Result<_>> = iter
         .into_iter()
         .collect::<FuturesUnordered<_>>()
-        .try_collect()
-        .await?;
+        .collect()
+        .await;
 
-    Ok(res.into_iter().flatten().collect())
+    Ok(res
+        .into_iter()
+        .inspect(|v| {
+            if let Err(err) = v {
+                tracing::error!(error = err.to_string(), "Failing to analyze crate")
+            }
+        })
+        .flatten()
+        .collect())
 }
 
-async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Option<AnalyzedCrateInfo>> {
+async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<AnalyzedCrateInfo> {
     let _disable_stderr = gag::Gag::stderr();
 
     tracing::debug!(
@@ -74,14 +83,12 @@ async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Option<A
 
     let meta = get_crate_meta(api, &ws).await?;
 
-    let Some(advisories) = deny::cargo_deny_advisories_check(&ws)? else {
-        return Ok(None);
-    };
+    let advisories = deny::cargo_deny_advisories_check(&ws)?;
 
     let info = AnalyzedCrateInfo { meta, advisories };
     tracing::debug!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
 
-    Ok(Some(info))
+    Ok(info)
 }
 
 async fn get_crate_meta(api: &CratesIoApi, ws: &Workspace<'_>) -> anyhow::Result<CrateMetaInfo> {

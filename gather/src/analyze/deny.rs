@@ -21,7 +21,7 @@ static ADVISORY_DB: LazyLock<anyhow::Result<advisories::DbSet>> = LazyLock::new(
     advisories::DbSet::load(db_path, vec![], advisories::Fetch::Allow)
 });
 
-pub fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<Option<AdvisoriesResults>> {
+pub fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<AdvisoriesResults> {
     let mut files = Files::new();
     // write down default `deny.default.toml`
     let cfg_id = files.add(
@@ -58,11 +58,7 @@ pub fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<Option<Advi
         };
         // its possible because of some rare feature flags with some optional dependencies,
         // with enabling all feature flags all together clashes dependencies.
-        // For such rare cases just skip analyzing such crates.
-        // Was failed for `swc_atlaskit_tokens/v0.0.3` crate.
-        let Ok(md) = cargo::ops::output_metadata(ws, &options) else {
-            return Ok(None);
-        };
+        let md = cargo::ops::output_metadata(ws, &options)?;
         let md = serde_json::from_value::<krates::cm::Metadata>(serde_json::to_value(md)?)?;
 
         let mut kb = krates::Builder::new();
@@ -116,5 +112,5 @@ pub fn cargo_deny_advisories_check(ws: &Workspace) -> anyhow::Result<Option<Advi
         }
     }
 
-    Ok(Some(res))
+    Ok(res)
 }

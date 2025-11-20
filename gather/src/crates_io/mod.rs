@@ -7,7 +7,7 @@ use std::{
 
 use bytes::{Buf, Bytes};
 use flate2::read::GzDecoder;
-use futures::{TryStreamExt, stream::FuturesUnordered};
+use futures::{StreamExt, stream::FuturesUnordered};
 use reqwest::{Client, ClientBuilder};
 use tar::Archive;
 use tokio::sync::Mutex;
@@ -47,7 +47,7 @@ impl CratesIoApi {
                     .await?
             };
             if !resp.status().is_success() {
-                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
+                tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
                 self.reset().await?;
                 continue;
             }
@@ -55,7 +55,7 @@ impl CratesIoApi {
             let resp = serde_json::from_slice::<types::CrateStatsResp>(&resp.bytes().await?)?;
             return Ok(resp.version);
         }
-        anyhow::bail!("Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint");
+        anyhow::bail!("Failled to call 'crates.io/v1/crates/{name}/{version}' endpoint");
     }
 
     #[tracing::instrument(skip_all)]
@@ -81,10 +81,24 @@ impl CratesIoApi {
             Ok(res)
         });
 
-        iter.into_iter()
+        let res: Vec<anyhow::Result<_>> = iter
+            .into_iter()
             .collect::<FuturesUnordered<_>>()
-            .try_collect()
-            .await
+            .collect()
+            .await;
+
+        Ok(res
+            .into_iter()
+            .inspect(|v| {
+                if let Err(err) = v {
+                    tracing::error!(
+                        error = err.to_string(),
+                        "Failing to download and and unpack crate"
+                    )
+                }
+            })
+            .flatten()
+            .collect())
     }
 
     async fn download_and_unpack_crate_to(
