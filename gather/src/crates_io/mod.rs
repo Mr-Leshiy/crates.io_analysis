@@ -133,7 +133,7 @@ impl CratesIoApi {
             };
 
             if !resp.status().is_success() {
-                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
+                tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
                 self.reset().await?;
                 continue;
             }
