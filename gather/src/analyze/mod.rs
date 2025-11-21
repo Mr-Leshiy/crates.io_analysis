@@ -1,10 +1,7 @@
 mod deny;
 pub mod types;
 
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::Path};
 
 use cargo::{
     GlobalContext,
@@ -16,56 +13,13 @@ use cargo::{
     },
     ops::resolve_ws_with_opts,
 };
-use futures::{StreamExt, stream::FuturesUnordered};
-use tracing::Span;
-use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
     analyze::types::{AnalyzedCrateInfo, CrateMetaInfo},
     crates_io::CratesIoApi,
 };
 
-#[tracing::instrument(skip_all)]
-pub async fn analyze_all(
-    api: &CratesIoApi,
-    crates_dirs: &[PathBuf],
-) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
-    let span: Span = Span::current();
-    span.pb_set_length(crates_dirs.len().try_into()?);
-    span.pb_set_finish_message("Analyzing all crates completed");
-
-    let iter = crates_dirs
-        .iter()
-        .map(async move |crate_dir| -> anyhow::Result<_> {
-            let res = analyze(api, crate_dir).await?;
-
-            {
-                let span = Span::current();
-                span.pb_set_message(&format!("{}-{}", res.meta.name, res.meta.version));
-                span.pb_inc(1);
-            }
-
-            Ok(res)
-        });
-
-    let res: Vec<anyhow::Result<_>> = iter
-        .into_iter()
-        .collect::<FuturesUnordered<_>>()
-        .collect()
-        .await;
-
-    Ok(res
-        .into_iter()
-        .inspect(|v| {
-            if let Err(err) = v {
-                tracing::error!(error = err.to_string(), "Failing to analyze crate")
-            }
-        })
-        .flatten()
-        .collect())
-}
-
-async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<AnalyzedCrateInfo> {
+pub async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<AnalyzedCrateInfo> {
     let _disable_stderr = gag::Gag::stderr();
 
     tracing::debug!(
