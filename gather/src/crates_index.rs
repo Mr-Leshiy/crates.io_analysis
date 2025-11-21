@@ -52,7 +52,7 @@ pub fn get_all_crates_versions(
         "Reading all crates versions from {crates_index:?} completed"
     ));
 
-    let mut iter = WalkDir::new(crates_index).max_depth(3).sort_by_file_name().into_iter();
+    let mut iter = WalkDir::new(crates_index).sort_by_file_name().into_iter();
     let root = iter
         .next()
         .ok_or(anyhow::anyhow!("Must have a root entry"))??;
@@ -70,12 +70,13 @@ pub fn get_all_crates_versions(
     anyhow::ensure!(github.path().file_name() == Some(OsStr::new(".github")));
     iter.skip_current_dir();
 
-    let iter = iter.filter_entry(skip_entry)
+    let iter = iter
         .par_bridge()
         .filter_map(|e| {
             e.inspect_err(|err| tracing::warn!(?err, "walkdir result is error"))
                 .ok()
         })
+        .filter(skip_entry)
         .inspect(|d|
             // updating progress bar
             {
