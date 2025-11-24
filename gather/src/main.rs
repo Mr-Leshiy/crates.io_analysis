@@ -33,6 +33,10 @@ struct Cli {
     #[clap(long)]
     crates_index: PathBuf,
 
+    /// Number of simultaneously processed crates.
+    #[clap(long, default_value_t = 20)]
+    simultaneous: usize,
+
     /// Output csv filename path
     #[clap(long, default_value = "crates_info.csv")]
     out: PathBuf,
@@ -118,7 +122,7 @@ fn main() -> anyhow::Result<()> {
         let api = CratesIoApi::new()?;
 
         let crates_info =
-            process_all(all_crates.as_slice(), &api, temp.path(), num_threads).await?;
+            process_all(all_crates.as_slice(), &api, temp.path(), cli.simultaneous).await?;
         write_to_csv(&cli.out, &crates_info)?;
         Ok(())
     })
@@ -129,7 +133,7 @@ async fn process_all(
     crates: &[(String, String)],
     api: &CratesIoApi,
     out: &Path,
-    num_threads: usize,
+    simultaneous: usize,
 ) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
     let span: Span = Span::current();
     span.pb_set_length(crates.len().try_into()?);
@@ -140,14 +144,14 @@ async fn process_all(
         // updating progress bar
         {
             let span = Span::current();
-            span.pb_set_message(&format!("{name}-{version}"));
+            span.pb_set_message(&format!("{name}-{version} analyzed"));
             span.pb_inc(1);
         }
         Ok(res)
     });
 
     let res: Vec<anyhow::Result<_>> = futures::stream::iter(iter)
-        .buffer_unordered(num_threads)
+        .buffer_unordered(simultaneous)
         .collect()
         .await;
 
