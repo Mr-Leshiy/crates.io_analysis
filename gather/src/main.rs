@@ -12,7 +12,7 @@ use std::{
 use bytes::Buf;
 use clap::{Parser, ValueEnum};
 use flate2::bufread::GzDecoder;
-use futures::{StreamExt, stream::FuturesUnordered};
+use futures::StreamExt;
 use indicatif::ProgressStyle;
 use rayon::ThreadPoolBuilder;
 use tar::Archive;
@@ -117,7 +117,8 @@ fn main() -> anyhow::Result<()> {
         let temp = TempDir::new("crates_io")?;
         let api = CratesIoApi::new()?;
 
-        let crates_info = process_all(all_crates.as_slice(), &api, temp.path()).await?;
+        let crates_info =
+            process_all(all_crates.as_slice(), &api, temp.path(), num_threads).await?;
         write_to_csv(&cli.out, &crates_info)?;
         Ok(())
     })
@@ -128,6 +129,7 @@ async fn process_all(
     crates: &[(String, String)],
     api: &CratesIoApi,
     out: &Path,
+    num_threads: usize,
 ) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
     let span: Span = Span::current();
     span.pb_set_length(crates.len().try_into()?);
@@ -144,9 +146,8 @@ async fn process_all(
         Ok(res)
     });
 
-    let res: Vec<anyhow::Result<_>> = iter
-        .into_iter()
-        .collect::<FuturesUnordered<_>>()
+    let res: Vec<anyhow::Result<_>> = futures::stream::iter(iter)
+        .buffer_unordered(num_threads)
         .collect()
         .await;
 
