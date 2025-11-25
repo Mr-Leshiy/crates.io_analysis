@@ -76,7 +76,7 @@ fn setup_tracing(log_level: LogLevel) -> anyhow::Result<()> {
         .add_directive("cargo_deny=off".parse()?)
         .add_directive("cargo=off".parse()?);
 
-    let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta}) {wide_msg}")?;
+    let pb_style = ProgressStyle::with_template("{bar:60} ({pos}/{len}, ETA {eta})")?;
     let indicatif_layer = IndicatifLayer::new()
         .with_progress_style(pb_style)
         .with_filter(filter.clone());
@@ -84,8 +84,7 @@ fn setup_tracing(log_level: LogLevel) -> anyhow::Result<()> {
     let log_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
         .without_time()
-        .with_writer(std::io::stdout)
-        .with_writer(indicatif_layer.inner().get_stdout_writer())
+        .with_writer(indicatif_layer.inner().get_stderr_writer())
         .with_filter(filter);
 
     tracing_subscriber::registry()
@@ -144,8 +143,8 @@ async fn process_all(
         // updating progress bar
         {
             let span = Span::current();
-            span.pb_set_message(&format!("{name}-{version} analyzed"));
             span.pb_inc(1);
+            tracing::info!(name = name, version = version, "Crate analyzed");
         }
         Ok(res)
     });
