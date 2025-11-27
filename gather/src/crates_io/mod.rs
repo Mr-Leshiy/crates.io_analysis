@@ -30,14 +30,17 @@ impl CratesIoApi {
         Ok(())
     }
 
+    async fn get(&self, url: String) -> anyhow::Result<reqwest::Response> {
+        tracing::debug!(url = url, "Trying to execute GET request");
+        let c = self.c.lock().await;
+        Ok(c.get(url).send().await?)
+    }
+
     pub async fn get_crate_stats(&self, name: &str, version: &str) -> anyhow::Result<CrateStats> {
         for attempt in 1..11 {
-            let resp = {
-                let c = self.c.lock().await;
-                c.get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
-                    .send()
-                    .await?
-            };
+            let resp = self
+                .get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
+                .await?;
             if !resp.status().is_success() {
                 tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
                 self.reset().await?;
@@ -52,14 +55,11 @@ impl CratesIoApi {
 
     pub async fn download_crate(&self, name: &str, version: &str) -> anyhow::Result<Bytes> {
         for attempt in 1..11 {
-            let resp = {
-                let c = self.c.lock().await;
-                c.get(format!(
+            let resp = self
+                .get(format!(
                     "{CRATE_IO_STATIC_DOWNLOAD_URL}/{name}/{name}-{version}.crate"
                 ))
-                .send()
-                .await?
-            };
+                .await?;
 
             if !resp.status().is_success() {
                 tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
