@@ -4,36 +4,48 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use reqwest::{Client, ClientBuilder};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, time::Instant};
 
 pub use types::CrateStats;
 
 const CRATES_IO_URL: &str = "https://crates.io/api";
 const CRATE_IO_STATIC_DOWNLOAD_URL: &str = "https://static.crates.io/crates";
 const USER_AGENT: &str = "crates.io_analysis (https://github.com/Mr-Leshiy/crates.io_analysis)";
+const CRATES_IO_API_RATE_LIMIT: Duration = Duration::from_secs(1);
 
-pub struct CratesIoApi {
-    c: Mutex<Client>,
+pub struct CratesIoApi(Mutex<CratesIoApiInner>);
+
+struct CratesIoApiInner {
+    c: Client,
+    last_request_time: Option<Instant>,
 }
 
 impl CratesIoApi {
     pub fn new() -> anyhow::Result<Self> {
-        Ok(Self {
-            c: Mutex::new(ClientBuilder::new().user_agent(USER_AGENT).build()?),
-        })
+        Ok(Self(Mutex::new(CratesIoApiInner {
+            c: ClientBuilder::new().user_agent(USER_AGENT).build()?,
+            last_request_time: None,
+        })))
     }
 
     pub async fn reset(&self) -> anyhow::Result<()> {
-        let mut c = self.c.lock().await;
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        *c = ClientBuilder::new().build()?;
+        let mut inner = self.0.lock().await;
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        inner.c = ClientBuilder::new().build()?;
         Ok(())
     }
 
     async fn get(&self, url: String) -> anyhow::Result<reqwest::Response> {
-        tracing::debug!(url = url, "Trying to execute GET request");
-        let c = self.c.lock().await;
-        Ok(c.get(url).send().await?)
+        let mut inner = self.0.lock().await;
+
+        if let Some(last_request_time) = inner.last_request_time.take() {
+            if last_request_time.elapsed() < CRATES_IO_API_RATE_LIMIT {
+                tokio::time::sleep(CRATES_IO_API_RATE_LIMIT - last_request_time.elapsed()).await;
+            }
+        }
+        let resp = inner.c.get(url).send().await?;
+        inner.last_request_time = Some(Instant::now());
+        Ok(resp)
     }
 
     pub async fn get_crate_stats(&self, name: &str, version: &str) -> anyhow::Result<CrateStats> {
@@ -42,7 +54,7 @@ impl CratesIoApi {
                 .get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
                 .await?;
             if !resp.status().is_success() {
-                tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
+                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
                 self.reset().await?;
                 continue;
             }
@@ -62,7 +74,7 @@ impl CratesIoApi {
                 .await?;
 
             if !resp.status().is_success() {
-                tracing::debug!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
+                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
                 self.reset().await?;
                 continue;
             }

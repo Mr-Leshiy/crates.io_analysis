@@ -20,7 +20,8 @@ use crate::{
 };
 
 pub async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<AnalyzedCrateInfo> {
-    let _disable_stderr = gag::Gag::stderr();
+    let disable_stderr = gag::Gag::stderr();
+    let disable_stdout = gag::Gag::stdout();
 
     tracing::debug!(
         crate_dir = ?crate_dir,
@@ -41,6 +42,9 @@ pub async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Anal
 
     let info = AnalyzedCrateInfo { meta, advisories };
     tracing::debug!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
+
+    std::mem::drop(disable_stderr);
+    std::mem::drop(disable_stdout);
 
     Ok(info)
 }
