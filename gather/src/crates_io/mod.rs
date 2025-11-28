@@ -54,7 +54,13 @@ impl CratesIoApi {
                 .get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
                 .await?;
             if !resp.status().is_success() {
-                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name,  "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying...");
+                tracing::error!(
+                    status_code = ?resp.status(),
+                    body = resp.text().await?,
+                    attempt = attempt,
+                    crate_name = name,
+                    "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying..."
+                );
                 self.reset().await?;
                 continue;
             }
@@ -74,7 +80,14 @@ impl CratesIoApi {
                 .await?;
 
             if !resp.status().is_success() {
-                tracing::error!(status_code = ?resp.status(), attempt=attempt, crate_name = name, version = version,  "Failled to download crate. Retrying...");
+                tracing::error!(
+                    status_code = ?resp.status(),
+                    body = resp.text().await?,
+                    attempt = attempt,
+                    crate_name = name,
+                    version = version,
+                    "Failled to download crate. Retrying..."
+                );
                 self.reset().await?;
                 continue;
             }
