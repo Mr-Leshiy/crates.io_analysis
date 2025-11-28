@@ -49,7 +49,7 @@ impl CratesIoApi {
     }
 
     pub async fn get_crate_stats(&self, name: &str, version: &str) -> anyhow::Result<CrateStats> {
-        for attempt in 1..11 {
+        for attempt in 1..6 {
             let resp = self
                 .get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
                 .await?;
@@ -72,7 +72,7 @@ impl CratesIoApi {
     }
 
     pub async fn download_crate(&self, name: &str, version: &str) -> anyhow::Result<Bytes> {
-        for attempt in 1..11 {
+        for attempt in 1..6 {
             let resp = self
                 .get(format!(
                     "{CRATE_IO_STATIC_DOWNLOAD_URL}/{name}/{name}-{version}.crate"
