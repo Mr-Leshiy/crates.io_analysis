@@ -31,7 +31,7 @@ impl CratesIoApi {
     pub async fn reset(&self) -> anyhow::Result<()> {
         let mut inner = self.0.lock().await;
         tokio::time::sleep(Duration::from_secs(30)).await;
-        inner.c = ClientBuilder::new().build()?;
+        inner.c = ClientBuilder::new().user_agent(USER_AGENT).build()?;
         Ok(())
     }
 
