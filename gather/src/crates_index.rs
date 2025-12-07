@@ -88,19 +88,22 @@ pub fn get_all_crates_versions(
     if only_latest {
         Ok(iter
             .filter_map(|d| {
-                read_latest_version_crate_index_file(d.into_path())
+                let path = d.into_path();
+                read_latest_version_crate_index_file(path.clone())
                     .inspect_err(|err| {
-                        tracing::warn!(err = err.to_string(), "Cannot read crate vesions from file")
+                        tracing::warn!(path = ?path, err = err.to_string(), "Cannot read crate vesions from file")
                     })
                     .ok()
+                    .flatten()
             })
             .collect())
     } else {
         Ok(iter
             .filter_map(|d| {
-                read_all_versions_crate_index_file(d.into_path())
+                let path = d.into_path();
+                read_all_versions_crate_index_file(path.clone())
                     .inspect_err(|err| {
-                        tracing::warn!(err = err.to_string(), "Cannot read crate vesions from file")
+                        tracing::warn!(path = ?path, err = err.to_string(), "Cannot read crate vesions from file")
                     })
                     .ok()
             })
@@ -109,10 +112,10 @@ pub fn get_all_crates_versions(
     }
 }
 
-fn read_latest_version_crate_index_file(path: PathBuf) -> anyhow::Result<CrateVersion> {
+fn read_latest_version_crate_index_file(path: PathBuf) -> anyhow::Result<Option<CrateVersion>> {
     let f = File::open(&path)?;
     let deser = serde_json::Deserializer::from_reader(f);
-    deser
+    Ok(deser
         .into_iter::<CrateVersion>()
         .par_bridge()
         .filter_map({
@@ -125,8 +128,7 @@ fn read_latest_version_crate_index_file(path: PathBuf) -> anyhow::Result<CrateVe
             }
         })
         .filter(|v| !v.yanked)
-        .max_by_key(|v| v.version.clone())
-        .ok_or(anyhow::anyhow!("Must have at least one latest crate"))
+        .max_by_key(|v| v.version.clone()))
 }
 
 fn read_all_versions_crate_index_file(
