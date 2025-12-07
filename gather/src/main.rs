@@ -122,6 +122,11 @@ fn main() -> anyhow::Result<()> {
 
         let crates_info =
             process_all(all_crates.as_slice(), &api, temp.path(), cli.simultaneous).await?;
+        tracing::info!(
+            analyzed_number = crates_info.len(),
+            skipped = (all_crates.len() - crates_info.len()),
+            "Crates analyzed"
+        );
         write_to_csv(&cli.out, &crates_info)?;
         Ok(())
     })
@@ -139,30 +144,25 @@ async fn process_all(
     span.pb_set_finish_message("Processing all crates completed");
 
     let iter = crates.iter().map(|(name, version)| async move {
-        let res = process(api, name.as_str(), version.as_str(), out).await?;
+        let res = process(api, name.as_str(), version.as_str(), out)
+            .await
+            .inspect_err(|err| tracing::error!(error = err.to_string(), "Failing to process crate"))
+            .ok()?;
         // updating progress bar
         {
             let span = Span::current();
             span.pb_inc(1);
             tracing::info!(name = name, version = version, "Crate analyzed");
         }
-        Ok(res)
+        Some(res)
     });
 
-    let res: Vec<anyhow::Result<_>> = futures::stream::iter(iter)
+    let res: Vec<_> = futures::stream::iter(iter)
         .buffer_unordered(simultaneous)
         .collect()
         .await;
 
-    Ok(res
-        .into_iter()
-        .inspect(|v| {
-            if let Err(err) = v {
-                tracing::error!(error = err.to_string(), "Failing to process crate")
-            }
-        })
-        .flatten()
-        .collect())
+    Ok(res.into_iter().flatten().collect())
 }
 
 async fn process(

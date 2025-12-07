@@ -94,7 +94,6 @@ pub fn get_all_crates_versions(
                     })
                     .ok()
             })
-            .filter(|v| !v.yanked)
             .collect())
     } else {
         Ok(iter
@@ -106,7 +105,6 @@ pub fn get_all_crates_versions(
                     .ok()
             })
             .flatten()
-            .filter(|v| !v.yanked)
             .collect())
     }
 }
@@ -126,6 +124,7 @@ fn read_latest_version_crate_index_file(path: PathBuf) -> anyhow::Result<CrateVe
             .ok()
             }
         })
+        .filter(|v| !v.yanked)
         .max_by_key(|v| v.version.clone())
         .ok_or(anyhow::anyhow!("Must have at least one latest crate"))
 }
@@ -135,13 +134,17 @@ fn read_all_versions_crate_index_file(
 ) -> anyhow::Result<impl ParallelIterator<Item = CrateVersion>> {
     let f = File::open(&path)?;
     let deser = serde_json::Deserializer::from_reader(f);
-    Ok(deser.into_iter::<CrateVersion>().par_bridge().filter_map({
-        let path = path.clone();
-        move |line| {
-            line.inspect_err(|err| {
+    Ok(deser
+        .into_iter::<CrateVersion>()
+        .par_bridge()
+        .filter_map({
+            let path = path.clone();
+            move |line| {
+                line.inspect_err(|err| {
                 tracing::warn!(err = err.to_string(), path=?path, "Cannot deserialize crate vesion")
             })
             .ok()
-        }
-    }))
+            }
+        })
+        .filter(|v| !v.yanked))
 }
