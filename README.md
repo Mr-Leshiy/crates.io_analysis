@@ -7,21 +7,21 @@ The analysis is driven by the [`cargo-deny`](https://github.com/EmbarkStudios/ca
 
 ### Build
 
+Need to fetch the latest `crates.io` index state
 ```shell
-earthly +gather-build
+mkdir crates_index
+git clone https://github.com/rust-lang/crates.io-index /crates_index
+```
+
+Build `gather` cli tool
+```shell
+cargo b --release
 ```
 
 ### Run
 
 ```shell
-docker run -ti --name gather gather:latest /bin/bash
 ./target/release/gather --crates-index /crates_index
-```
-
-### Copy
-
-```shell
-docker cp gather:app/crates_info.csv .
 ```
 
 ## Collected data
