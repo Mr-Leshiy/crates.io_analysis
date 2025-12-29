@@ -1,12 +1,10 @@
-mod types;
-
 use std::time::Duration;
 
 use bytes::Bytes;
 use reqwest::{Client, ClientBuilder};
 use tokio::{sync::Mutex, time::Instant};
 
-pub use types::CrateStats;
+use crate::types::{CrateStats, CrateStatsResp};
 
 const CRATES_IO_URL: &str = "https://crates.io/api";
 const CRATE_IO_STATIC_DOWNLOAD_URL: &str = "https://static.crates.io/crates";
@@ -53,10 +51,12 @@ impl CratesIoApi {
             let resp = self
                 .get(format!("{CRATES_IO_URL}/v1/crates/{name}/{version}"))
                 .await?;
-            if !resp.status().is_success() {
+            let status = resp.status();
+            if !status.is_success() {
+                let body = resp.text().await?;
                 tracing::error!(
-                    status_code = ?resp.status(),
-                    body = resp.text().await?,
+                    status_code = ?status,
+                    body = body,
                     attempt = attempt,
                     crate_name = name,
                     "Failled to call 'crates.io/v1/crates/{{name}}/{{version}}' endpoint. Retrying..."
@@ -65,7 +65,7 @@ impl CratesIoApi {
                 continue;
             }
 
-            let resp = serde_json::from_slice::<types::CrateStatsResp>(&resp.bytes().await?)?;
+            let resp = serde_json::from_slice::<CrateStatsResp>(&resp.bytes().await?)?;
             return Ok(resp.version);
         }
         anyhow::bail!("Failled to call 'crates.io/v1/crates/{name}/{version}' endpoint");
@@ -78,11 +78,13 @@ impl CratesIoApi {
                     "{CRATE_IO_STATIC_DOWNLOAD_URL}/{name}/{name}-{version}.crate"
                 ))
                 .await?;
-
-            if !resp.status().is_success() {
+            
+            let status = resp.status();
+            if !status.is_success() {
+                let body = resp.text().await?;
                 tracing::error!(
-                    status_code = ?resp.status(),
-                    body = resp.text().await?,
+                    status_code = ?status,
+                    body = body,
                     attempt = attempt,
                     crate_name = name,
                     version = version,

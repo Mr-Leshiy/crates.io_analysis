@@ -1,12 +1,10 @@
 mod analyze;
 mod crates_index;
 mod crates_io;
+mod types;
 
 use std::{
-    fs::File,
-    num::NonZeroUsize,
-    path::{Path, PathBuf},
-    thread,
+    fs::File, num::NonZeroUsize, path::{Path, PathBuf}, sync::Arc, thread
 };
 
 use bytes::Buf;
@@ -22,9 +20,8 @@ use tracing_indicatif::{IndicatifLayer, span_ext::IndicatifSpanExt};
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    analyze::{analyze, types::AnalyzedCrateInfo},
-    crates_index::get_all_crates_versions,
-    crates_io::CratesIoApi,
+    analyze::analyze, crates_index::get_all_crates_versions, crates_io::CratesIoApi,
+    types::AnalyzedCrateInfo,
 };
 
 #[derive(Parser, Debug)]
@@ -118,10 +115,8 @@ fn main() -> anyhow::Result<()> {
 
     rt.block_on(async {
         let temp = TempDir::new("crates_io")?;
-        let api = CratesIoApi::new()?;
 
-        let crates_info =
-            process_all(all_crates.as_slice(), &api, temp.path(), cli.simultaneous).await?;
+        let crates_info = process_all(all_crates.as_slice(), temp.path(), cli.simultaneous).await?;
         tracing::info!(
             analyzed_number = crates_info.len(),
             skipped = (all_crates.len() - crates_info.len()),
@@ -135,7 +130,6 @@ fn main() -> anyhow::Result<()> {
 #[tracing::instrument(skip_all)]
 async fn process_all(
     crates: &[(String, String)],
-    api: &CratesIoApi,
     out: &Path,
     simultaneous: usize,
 ) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
@@ -143,37 +137,65 @@ async fn process_all(
     span.pb_set_length(crates.len().try_into()?);
     span.pb_set_finish_message("Processing all crates completed");
 
-    let iter = crates.iter().map(|(name, version)| async move {
-        let res = process(api, name.as_str(), version.as_str(), out)
-            .await
-            .inspect_err(|err| tracing::error!(error = err.to_string(), "Failing to process crate"))
-            .ok()?;
-        // updating progress bar
-        {
-            let span = Span::current();
-            span.pb_inc(1);
-            tracing::info!(name = name, version = version, "Crate analyzed");
-        }
-        Some(res)
-    });
+    let apis = (0..simultaneous)
+        .map(|_| CratesIoApi::new().map(Arc::new))
+        .collect::<anyhow::Result<Vec<_>>>()?;
 
-    let res: Vec<_> = futures::stream::iter(iter)
-        .buffer_unordered(simultaneous)
-        .collect()
-        .await;
+    let mut result = Vec::with_capacity(crates.len());
+    for chunk in crates.chunks(apis.len()) {
+        let handles = chunk.iter().zip(apis.iter()).map(|((name, version), api)| {
+            tokio::spawn({
+                let name = name.clone();
+                let version = version.clone();
+                let api = api.clone();
+                let out = out.to_path_buf();
+                async move {
+                    let res = process(&api, name, version, &out)
+                        .await
+                        .inspect_err(|err| {
+                            tracing::error!(error = err.to_string(), "Failing to process crate")
+                        })
+                        .ok()?;
+                    // updating progress bar
+                    {
+                        let span = Span::current();
+                        span.pb_inc(1);
+                        tracing::info!(name = res.name, version = res.version, "Crate analyzed");
+                    }
+                    Some(res)
+                }
+            })
+        });
 
-    Ok(res.into_iter().flatten().collect())
+        let res: Vec<_> = futures::stream::iter(handles)
+            .buffer_unordered(chunk.len())
+            .collect()
+            .await;
+
+        result.extend(res.into_iter().flat_map(Result::ok).flatten());
+    }
+
+    Ok(result)
 }
 
 async fn process(
     api: &CratesIoApi,
-    crate_name: &str,
-    crate_version: &str,
+    crate_name: String,
+    crate_version: String,
     out: &Path,
 ) -> anyhow::Result<AnalyzedCrateInfo> {
-    let crate_bytes = api.download_crate(crate_name, crate_version).await?;
-    let crate_dir = unpack_crate_to(crate_name, crate_version, crate_bytes, out)?;
-    analyze(api, &crate_dir).await
+    let crate_bytes = api.download_crate(crate_name.as_str(), crate_version.as_str()).await?;
+    let stats = api.get_crate_stats(crate_name.as_str(), crate_version.as_str()).await?;
+    let crate_dir = unpack_crate_to(crate_name.as_str(), crate_version.as_str(), crate_bytes, out)?;
+    let (advisories, deps) = analyze(&crate_dir)?;
+
+    Ok(AnalyzedCrateInfo {
+        name: crate_name,
+        version: crate_version,
+        stats,
+        deps,
+        advisories,
+    })
 }
 
 fn unpack_crate_to(

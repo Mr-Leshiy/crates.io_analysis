@@ -1,5 +1,4 @@
 mod deny;
-pub mod types;
 
 use std::{collections::HashMap, path::Path};
 
@@ -14,12 +13,9 @@ use cargo::{
     ops::resolve_ws_with_opts,
 };
 
-use crate::{
-    analyze::types::{AnalyzedCrateInfo, CrateMetaInfo},
-    crates_io::CratesIoApi,
-};
+use crate::types::{AdvisoriesResults, DepsInfo};
 
-pub async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<AnalyzedCrateInfo> {
+pub fn analyze(crate_dir: &Path) -> anyhow::Result<(AdvisoriesResults, DepsInfo)> {
     let disable_stderr = gag::Gag::stderr();
     let disable_stdout = gag::Gag::stdout();
 
@@ -36,20 +32,18 @@ pub async fn analyze(api: &CratesIoApi, crate_dir: &Path) -> anyhow::Result<Anal
     let ctx = GlobalContext::default()?;
     let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &ctx)?;
 
-    let meta = get_crate_meta(api, &ws).await?;
-
+    let deps_info = get_deps_info(&ws)?;
     let advisories = deny::cargo_deny_advisories_check(&ws)?;
 
-    let info = AnalyzedCrateInfo { meta, advisories };
-    tracing::debug!(crate_dir = ?crate_dir, info = ?info, "Crate analyzed.");
+    tracing::debug!(crate_dir = ?crate_dir, deps_info = ?deps_info, advisories = ?advisories, "Crate analyzed.");
 
     std::mem::drop(disable_stderr);
     std::mem::drop(disable_stdout);
 
-    Ok(info)
+    Ok((advisories, deps_info))
 }
 
-async fn get_crate_meta(api: &CratesIoApi, ws: &Workspace<'_>) -> anyhow::Result<CrateMetaInfo> {
+fn get_deps_info(ws: &Workspace<'_>) -> anyhow::Result<DepsInfo> {
     let &[member] = ws.members().collect::<Vec<_>>().as_slice() else {
         anyhow::bail!("Analyzed workspace must have only one member");
     };
@@ -90,17 +84,10 @@ async fn get_crate_meta(api: &CratesIoApi, ws: &Workspace<'_>) -> anyhow::Result
     // the rest of the items are ALL dependencies of the crate
     let all_deps = package_map.len();
 
-    let name = member.name().to_string();
-    let version = member.version().to_string();
-
-    let stats = api.get_crate_stats(&name, &version).await?;
-
-    Ok(CrateMetaInfo {
-        name,
-        version,
-        downloads: stats.downloads,
-        created_at: stats.created_at,
+    let deps = DepsInfo {
         direct_deps,
         all_deps,
-    })
+    };
+
+    Ok(deps)
 }

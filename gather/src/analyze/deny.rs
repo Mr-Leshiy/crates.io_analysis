@@ -8,7 +8,7 @@ use cargo_deny::{
 use krates::{NoneFilter, Utf8PathBuf};
 use std::sync::LazyLock;
 
-use crate::analyze::types::AdvisoriesResults;
+use crate::types::AdvisoriesResults;
 
 const ADVISORY_DB_PATH: LazyLock<anyhow::Result<Utf8PathBuf>> =
     LazyLock::new(|| utf8path(home::cargo_home()?.join("advisory-dbs")));
