@@ -145,6 +145,7 @@ async fn process_all(
     for chunk in crates.chunks(apis.len()) {
         let handles = chunk.iter().zip(apis.iter()).map(|((name, version), api)| {
             tokio::spawn({
+                let span = Span::current();
                 let name = name.clone();
                 let version = version.clone();
                 let api = api.clone();
@@ -158,7 +159,6 @@ async fn process_all(
                         .ok()?;
                     // updating progress bar
                     {
-                        let span = Span::current();
                         span.pb_inc(1);
                         tracing::info!(name = res.name, version = res.version, "Crate analyzed");
                     }
