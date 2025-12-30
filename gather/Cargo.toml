@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.100"
 bytes = "1.11.0"
 cargo = { version = "=0.94.0", git = "https://github.com/rust-lang/cargo.git" }
-cargo-deny = "0.18.5"
+cargo-deny = "0.18.9"
 clap = { version = "4.5.50", features = ["derive"] }
 crossbeam-channel = "0.5.15"
 csv = "1.4.0"
