@@ -9,20 +9,17 @@ use crate::types::{CrateStats, CrateStatsResp};
 const CRATES_IO_URL: &str = "https://crates.io/api";
 const CRATE_IO_STATIC_DOWNLOAD_URL: &str = "https://static.crates.io/crates";
 const USER_AGENT: &str = "crates.io_analysis (https://github.com/Mr-Leshiy/crates.io_analysis)";
-const CRATES_IO_API_RATE_LIMIT: Duration = Duration::from_secs(1);
 
 pub struct CratesIoApi(Mutex<CratesIoApiInner>);
 
 struct CratesIoApiInner {
     c: Client,
-    last_request_time: Option<Instant>,
 }
 
 impl CratesIoApi {
     pub fn new() -> anyhow::Result<Self> {
         Ok(Self(Mutex::new(CratesIoApiInner {
             c: ClientBuilder::new().user_agent(USER_AGENT).build()?,
-            last_request_time: None,
         })))
     }
 
@@ -36,13 +33,7 @@ impl CratesIoApi {
     async fn get(&self, url: String) -> anyhow::Result<reqwest::Response> {
         let mut inner = self.0.lock().await;
 
-        if let Some(last_request_time) = inner.last_request_time.take() {
-            if last_request_time.elapsed() < CRATES_IO_API_RATE_LIMIT {
-                tokio::time::sleep(CRATES_IO_API_RATE_LIMIT - last_request_time.elapsed()).await;
-            }
-        }
         let resp = inner.c.get(url).send().await?;
-        inner.last_request_time = Some(Instant::now());
         Ok(resp)
     }
 
