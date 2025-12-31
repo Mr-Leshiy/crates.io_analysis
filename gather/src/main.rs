@@ -4,7 +4,11 @@ mod crates_io;
 mod types;
 
 use std::{
-    fs::File, num::NonZeroUsize, path::{Path, PathBuf}, sync::Arc, thread
+    fs::File,
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    sync::Arc,
+    thread,
 };
 
 use bytes::Buf;
@@ -184,9 +188,18 @@ async fn process(
     crate_version: String,
     out: &Path,
 ) -> anyhow::Result<AnalyzedCrateInfo> {
-    let crate_bytes = api.download_crate(crate_name.as_str(), crate_version.as_str()).await?;
-    let stats = api.get_crate_stats(crate_name.as_str(), crate_version.as_str()).await?;
-    let crate_dir = unpack_crate_to(crate_name.as_str(), crate_version.as_str(), crate_bytes, out)?;
+    let crate_bytes = api
+        .download_crate(crate_name.as_str(), crate_version.as_str())
+        .await?;
+    let stats = api
+        .get_crate_stats(crate_name.as_str(), crate_version.as_str())
+        .await?;
+    let crate_dir = unpack_crate_to(
+        crate_name.as_str(),
+        crate_version.as_str(),
+        crate_bytes,
+        out,
+    )?;
     let (advisories, deps) = analyze(&crate_dir)?;
 
     Ok(AnalyzedCrateInfo {

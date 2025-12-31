@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use reqwest::{Client, ClientBuilder};
-use tokio::{sync::Mutex, time::Instant};
+use tokio::sync::Mutex;
 
 use crate::types::{CrateStats, CrateStatsResp};
 
@@ -31,8 +31,7 @@ impl CratesIoApi {
     }
 
     async fn get(&self, url: String) -> anyhow::Result<reqwest::Response> {
-        let mut inner = self.0.lock().await;
-
+        let inner = self.0.lock().await;
         let resp = inner.c.get(url).send().await?;
         Ok(resp)
     }
@@ -69,7 +68,7 @@ impl CratesIoApi {
                     "{CRATE_IO_STATIC_DOWNLOAD_URL}/{name}/{name}-{version}.crate"
                 ))
                 .await?;
-            
+
             let status = resp.status();
             if !status.is_success() {
                 let body = resp.text().await?;
