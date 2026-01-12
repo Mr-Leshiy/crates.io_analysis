@@ -39,8 +39,8 @@ struct Cli {
     simultaneous: usize,
 
     /// Output csv filename path
-    #[clap(long, default_value = "crates_info.csv")]
-    out: PathBuf,
+    #[clap(long)]
+    out: Option<PathBuf>,
 
     #[clap(long, default_value = "info")]
     log_level: LogLevel,
@@ -107,6 +107,14 @@ fn main() -> anyhow::Result<()> {
         .num_threads(num_threads)
         .build_global()?;
 
+    let git_rep = git2::Repository::open(&cli.crates_index)?;
+    let out = if let Some(out) = cli.out {
+        out
+    } else {
+        format!("{}.csv", git_rep.head()?.peel_to_commit()?.id().to_string()).into()
+    };
+    tracing::info!(out = ?out, "Output filename");
+
     let all_crates = get_all_crates_versions(&cli.crates_index, true)?;
     let all_crates = all_crates
         .into_iter()
@@ -126,7 +134,7 @@ fn main() -> anyhow::Result<()> {
             skipped = (all_crates.len() - crates_info.len()),
             "Crates analyzed"
         );
-        write_to_csv(&cli.out, &crates_info)?;
+        write_to_csv(&out, &crates_info)?;
         Ok(())
     })
 }
