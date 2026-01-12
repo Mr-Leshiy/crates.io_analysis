@@ -29,6 +29,8 @@ cargo b --release
 Inside the `data` directory, you'll find pre-collected data that you can analyze on your own !
 
 ## Analyze
+Prepare all necessary `python` deps using `uv`.
 ```shell
-uv run analyze.py --csv <file_1.csv> --csv <file_2.csv> ...
+uv sync
 ```
+You could inspect and run the `analysis.ipynb` notebook.
