@@ -1,6 +1,6 @@
 mod deny;
 
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::LazyLock};
 
 use cargo::{
     GlobalContext,
@@ -14,6 +14,9 @@ use cargo::{
 };
 
 use crate::types::{AdvisoriesResults, DepsInfo};
+
+static CARGO_GLOBAL_CTX: LazyLock<GlobalContext> =
+    LazyLock::new(|| GlobalContext::default().expect("cannot initialise cargo global context"));
 
 pub fn analyze(crate_dir: &Path) -> anyhow::Result<(AdvisoriesResults, DepsInfo)> {
     let disable_stderr = gag::Gag::stderr();
@@ -29,8 +32,10 @@ pub fn analyze(crate_dir: &Path) -> anyhow::Result<(AdvisoriesResults, DepsInfo)
         "{crate_dir:?} must be an absolute path"
     );
 
-    let ctx = GlobalContext::default()?;
-    let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &ctx)?;
+    // Remove existing Cargo.lock file to pull the most recent one, with updated dependency tree
+    std::fs::remove_file(crate_dir.join("Cargo.lock")).unwrap();
+
+    let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &CARGO_GLOBAL_CTX)?;
 
     let deps_info = get_deps_info(&ws)?;
     let advisories = deny::cargo_deny_advisories_check(&ws)?;
