@@ -32,8 +32,9 @@ pub fn analyze(crate_dir: &Path) -> anyhow::Result<(AdvisoriesResults, DepsInfo)
         "{crate_dir:?} must be an absolute path"
     );
 
-    // Remove existing Cargo.lock file to pull the most recent one, with updated dependency tree
-    std::fs::remove_file(crate_dir.join("Cargo.lock")).unwrap();
+    // Remove existing Cargo.lock file to pull the most recent one, with updated dependency tree.
+    // Cargo.lock be absent.
+    let _ = std::fs::remove_file(crate_dir.join("Cargo.lock"));
 
     let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &CARGO_GLOBAL_CTX)?;
 
