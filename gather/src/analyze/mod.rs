@@ -13,12 +13,12 @@ use cargo::{
     ops::resolve_ws_with_opts,
 };
 
-use crate::types::{AdvisoriesResults, DepsInfo};
+use crate::types::{AdvisoriesResults, CrateType, DepsInfo};
 
 static CARGO_GLOBAL_CTX: LazyLock<GlobalContext> =
     LazyLock::new(|| GlobalContext::default().expect("cannot initialise cargo global context"));
 
-pub fn analyze(crate_dir: &Path) -> anyhow::Result<(AdvisoriesResults, DepsInfo)> {
+pub fn analyze(crate_dir: &Path) -> anyhow::Result<Vec<(AdvisoriesResults, DepsInfo, CrateType)>> {
     let disable_stderr = gag::Gag::stderr();
     let disable_stdout = gag::Gag::stdout();
 
@@ -32,20 +32,40 @@ pub fn analyze(crate_dir: &Path) -> anyhow::Result<(AdvisoriesResults, DepsInfo)
         "{crate_dir:?} must be an absolute path"
     );
 
-    // Remove existing Cargo.lock file to pull the most recent one, with updated dependency tree.
-    // Cargo.lock be absent.
-    let _ = std::fs::remove_file(crate_dir.join("Cargo.lock"));
-
     let ws = Workspace::new(&crate_dir.join("Cargo.toml"), &CARGO_GLOBAL_CTX)?;
 
-    let deps_info = get_deps_info(&ws)?;
-    let advisories = deny::cargo_deny_advisories_check(&ws)?;
+    let &[member] = ws.members().collect::<Vec<_>>().as_slice() else {
+        anyhow::bail!("Analyzed workspace must have only one member");
+    };
 
-    tracing::debug!(crate_dir = ?crate_dir, deps_info = ?deps_info, advisories = ?advisories, "Crate analyzed.");
+    let mut res = Vec::new();
+
+    // Has a 'bin' target
+    if member.targets().iter().any(|t| t.is_bin()) {
+        let (advisories, deps) = analyze_inner(&ws)?;
+        res.push((advisories, deps, CrateType::Bin));
+    }
+
+    // Has a 'lib' target
+    if member.targets().iter().any(|t| t.is_lib()) {
+        let (advisories, deps) = analyze_inner(&ws)?;
+        // Remove existing Cargo.lock file to pull the most recent one, with updated dependency tree.
+        // Cargo.lock could be absent.
+        let _ = std::fs::remove_file(crate_dir.join("Cargo.lock"));
+        res.push((advisories, deps, CrateType::Lib));
+    }
+
+    tracing::debug!(crate_dir = ?crate_dir, "Crate analyzed.");
 
     std::mem::drop(disable_stderr);
     std::mem::drop(disable_stdout);
 
+    Ok(res)
+}
+
+fn analyze_inner(ws: &Workspace<'_>) -> anyhow::Result<(AdvisoriesResults, DepsInfo)> {
+    let deps_info = get_deps_info(&ws)?;
+    let advisories = deny::cargo_deny_advisories_check(&ws)?;
     Ok((advisories, deps_info))
 }
 

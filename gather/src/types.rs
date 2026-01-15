@@ -16,10 +16,17 @@ pub struct CrateStats {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, strum::Display)]
+pub enum CrateType {
+    Bin,
+    Lib,
+}
+
 #[derive(Debug, Clone)]
 pub struct AnalyzedCrateInfo {
     pub name: String,
     pub version: String,
+    pub r#type: CrateType,
     pub stats: CrateStats,
     pub deps: DepsInfo,
     pub advisories: AdvisoriesResults,
@@ -40,6 +47,7 @@ impl AnalyzedCrateInfo {
             [
                 "name".to_string(),
                 "version".to_string(),
+                "type".to_string(),
                 "downloads".to_string(),
                 "created_at".to_string(),
                 "direct_deps".to_string(),
@@ -60,6 +68,7 @@ impl AnalyzedCrateInfo {
     ) -> anyhow::Result<()> {
         csv_w.write_field(&self.name)?;
         csv_w.write_field(&self.version)?;
+        csv_w.write_field(&self.r#type.to_string())?;
         csv_w.write_field(self.stats.downloads.to_string())?;
         csv_w.write_field(&self.stats.created_at)?;
         csv_w.write_field(self.deps.direct_deps.to_string())?;

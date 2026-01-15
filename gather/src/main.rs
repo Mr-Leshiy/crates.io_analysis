@@ -163,7 +163,7 @@ async fn process_all(
                 let api = api.clone();
                 let out = out.to_path_buf();
                 async move {
-                    let res = process(&api, name, version, &out)
+                    let res = process(&api, name.clone(), version.clone(), &out)
                         .await
                         .inspect_err(|err| {
                             tracing::error!(error = err.to_string(), "Failing to process crate")
@@ -172,7 +172,7 @@ async fn process_all(
                     // updating progress bar
                     {
                         span.pb_inc(1);
-                        tracing::info!(name = res.name, version = res.version, "Crate analyzed");
+                        tracing::info!(name = name, version = version, "Crate analyzed");
                     }
                     Some(res)
                 }
@@ -184,7 +184,13 @@ async fn process_all(
             .collect()
             .await;
 
-        result.extend(res.into_iter().flat_map(Result::ok).flatten());
+        result.extend(
+            res.into_iter()
+                .flat_map(Result::ok)
+                .flatten()
+                .into_iter()
+                .flatten(),
+        );
     }
 
     Ok(result)
@@ -195,7 +201,7 @@ async fn process(
     crate_name: String,
     crate_version: String,
     out: &Path,
-) -> anyhow::Result<AnalyzedCrateInfo> {
+) -> anyhow::Result<Vec<AnalyzedCrateInfo>> {
     let crate_bytes = api
         .download_crate(crate_name.as_str(), crate_version.as_str())
         .await?;
@@ -208,15 +214,18 @@ async fn process(
         crate_bytes,
         out,
     )?;
-    let (advisories, deps) = analyze(&crate_dir)?;
 
-    Ok(AnalyzedCrateInfo {
-        name: crate_name,
-        version: crate_version,
-        stats,
-        deps,
-        advisories,
-    })
+    Ok(analyze(&crate_dir)?
+        .into_iter()
+        .map(|(advisories, deps, r#type)| AnalyzedCrateInfo {
+            name: crate_name.clone(),
+            version: crate_version.clone(),
+            r#type,
+            stats: stats.clone(),
+            deps,
+            advisories,
+        })
+        .collect())
 }
 
 fn unpack_crate_to(
@@ -246,4 +255,15 @@ fn write_to_csv(out: &Path, crates: &[AnalyzedCrateInfo]) -> anyhow::Result<()> 
     }
 
     Ok(())
+}
+
+#[tokio::test]
+async fn some_test() {
+    let api = CratesIoApi::new().unwrap();
+    let name = "cargo".to_string();
+    let version = "0.93.0".to_string();
+    let out = Path::new("/Users/alexeypoghilenkov/Projects/crates.io_analyses/gather");
+
+    let res = process(&api, name, version, out).await.unwrap();
+    dbg!(res);
 }
